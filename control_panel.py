@@ -49,11 +49,11 @@ class ControlPanel:
         
         # List of available experiments
         self.experiments = {
-            "Nback (letters) TBI" : "main_stimulus_TBI_letter.py",
-            "Nback (letters) NRA" : "main_stimulus_NRA_letter.py",
-            "Nback (numbers) NRA" : "main_stimulus_NRA_number.py",
-            "Nback (numbers) SCog": "main_stimulus_SCogletter.py",
-            "Fingertapping"       : "main_fingertapping.py"
+            "Nback (letters) TBI" : "TBI_letter",
+            "Nback (letters) NRA" : "NRA_letter",
+            "Nback (numbers) NRA" : "NRA_number",
+            "Nback (SCog with extended rest)" : "SCog_letter",
+            "Fingertapping" : "fingertapping"
         }
         
         # Create dropdown menu
@@ -144,13 +144,19 @@ class ControlPanel:
         if not subject:
             return
         
-        # Get selected experiment script
+        # Get selected experiment profile
         experiment_name = self.selected_experiment.get()
-        script_name = self.experiments.get(experiment_name)
+        profile = self.experiments.get(experiment_name)
         
-        if not script_name:
+        if not profile:
             messagebox.showerror("Error", "Please select an experiment")
             return
+        
+        # Handle fingertapping separately (still uses old script)
+        if profile == "fingertapping":
+            script_name = "main_fingertapping.py"
+        else:
+            script_name = "main_nback.py"
             
         try:
             # Create temporary file for progress communication
@@ -165,11 +171,23 @@ class ControlPanel:
             self.debug_label.config(text=f"Temp file created: {os.path.basename(temp_path)}")
             
             # Start the process with the temp file path
-            self.process = subprocess.Popen(
-                [sys.executable, script_name, subject, temp_path],
-                stderr=subprocess.PIPE,
-                stdout=subprocess.PIPE
-            )
+            if profile == "fingertapping":
+                # Old style for fingertapping
+                self.process = subprocess.Popen(
+                    [sys.executable, script_name, subject, temp_path],
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE
+                )
+            else:
+                # New style for unified script with profile argument
+                self.process = subprocess.Popen(
+                    [sys.executable, script_name, 
+                     "--subject_id", subject, 
+                     "--progress_file", temp_path,
+                     "--profile", profile],
+                    stderr=subprocess.PIPE,
+                    stdout=subprocess.PIPE
+                )
             
             # Update debug label
             self.debug_label.config(text=f"Process started with PID: {self.process.pid}")

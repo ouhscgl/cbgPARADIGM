@@ -66,15 +66,15 @@ def wait_period(screen, duration_ms, progress_file=None, status=None, progress_s
         # Update progress if needed
         if progress_file and status and progress_end > progress_start:
             elapsed = pygame.time.get_ticks() - start_time
-            progress_percent = progress_start + (elapsed / duration_ms) * (progress_end - progress_start)
+            progress_percent = round(progress_start + (elapsed / duration_ms) * (progress_end - progress_start), 2)
             update_progress(progress_file, progress_percent, status)
             
         # Ensure the screen stays black
-        screen.fill((0, 0, 0))
-        pygame.display.flip()
+        # screen.fill((0, 0, 0))
+        # pygame.display.flip()
         
         # Small delay to prevent high CPU usage
-        pygame.time.wait(50)
+        pygame.time.wait(100)
         
     return False
 
@@ -161,12 +161,13 @@ def main():
     # Initial setup
     # -- create display, initialize font and audio path
     audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
-    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREEN)
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), display=1)
     font = pygame.font.SysFont(None, 72)
+    status = ''
     # -- display initial instructions
     screen.fill((0, 0, 0))
     display_message(screen, font, "The exercise will begin shortly")  # Fixed spelling
-    display_message(screen, font, "Please remain still and focused", (SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80))
+    display_message(screen, font, "Please get comfortable.", (SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80))
     pygame.display.flip()
     # -- update progress file
     if progress_file:
@@ -237,7 +238,10 @@ def main():
             
             # -- play directional instruction (LEFT / RIGHT)
             send_keystroke()
-            audio_file = str(audio_path / f"{direction}.wav")
+            screen.fill((0, 0, 0))
+            display_message(screen, font, f"{direction}")
+            pygame.display.flip()
+            audio_file = str(audio_path / f"{direction}.mp3")
             if play_audio(audio_file):
                 return
             
@@ -259,7 +263,9 @@ def main():
             
             # -- play rest instruction
             send_keystroke()
-            audio_file = str(audio_path / "STOP.wav")
+            screen.fill((0, 0, 0))
+            pygame.display.flip()
+            audio_file = str(audio_path / "STOP.mp3")
             if play_audio(audio_file):
                 return
             
@@ -281,8 +287,8 @@ def main():
     
     # -- display terminal instructions
     screen.fill((0, 0, 0))
-    display_message(screen, font, "You have completed the")
-    display_message(screen, font, "muscle exercise. Please stand by.", (SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80))
+    display_message(screen, font, "You have completed the exercise.")
+    display_message(screen, font, "Please stand by.", (SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80))
     pygame.display.flip()
     pygame.time.wait(TASK_DURATION)
     
