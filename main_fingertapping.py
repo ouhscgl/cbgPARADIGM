@@ -138,8 +138,8 @@ def send_keystroke():
     else:
         print(f"{nEEG} window not found")
     # -- old EEG input
-    oEEG = "EMOTIV"
-    oEEG_hwnd = win32gui.FindWindow(None, oEEG)
+    oEEG = "EmotivPRO"
+    oEEG_hwnd = find_window_with_partial_name(oEEG)
     if oEEG_hwnd:
         PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
         time.sleep(0.01)
