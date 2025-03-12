@@ -1,0 +1,6 @@
+@echo off
+echo Starting paradigm setup...
+
+echo Launching Central Control Window...
+python "C:\Projects\TBI\_ext\control_panel.py"
+timeout /t 2 /nobreak > nul
