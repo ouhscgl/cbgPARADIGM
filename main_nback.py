@@ -275,7 +275,7 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None):
                          'ActualResponse'  : temp_ar, 
                          'ReactionTime'    : temp_rt})
 
-def save_results(results, save_path, subject_id, save_method):
+def save_results(results, save_path, subject_id):
     """Save results using the appropriate method for the experiment profile"""
     if results.empty or subject_id == "UNKNOWN":
         return False
@@ -366,7 +366,7 @@ def main():
         update_progress(args.progress_file, 90, "Saving results...")
     
     # Save results using the appropriate method
-    save_results(results, profile["save_path"], args.subject_id, profile["save_method"])
+    save_results(results, Path(SAVE_PATH), args.subject_id)
     
     if args.progress_file:
         update_progress(args.progress_file, 95, "Finishing up...")

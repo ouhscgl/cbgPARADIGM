@@ -123,7 +123,7 @@ class ControlPanel:
         if not subject:
             return
             
-        video_path = "VIDEO PATH"
+        video_path = r"C:\Users\biochemlab\Desktop\N-back instructions video.mov"
         try:
             if sys.platform == "win32":
                 os.startfile(video_path)

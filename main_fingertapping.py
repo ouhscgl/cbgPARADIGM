@@ -15,7 +15,7 @@ import os
 WINDOW_NAME   = "Small Motor Task"
 # -- constants
 TASK_DURATION = 10000
-REST_DURATION = 20000
+REST_DURATION = 15000
 RESTING_STATE = 60000
 REPETITIONS   = 3 
 # -- screen settings
@@ -109,7 +109,7 @@ def send_keystroke():
     pygame_hwnd = win32gui.FindWindow(None, WINDOW_NAME)
     # -- new NIR input
     nNIR = "Aurora fNIRS"
-    nNIR_hwnd = win32gui.FindWindow(None, nNIR)
+    nNIR_hwnd = find_window_with_partial_name(nNIR)
     if nNIR_hwnd:
         PostMessage(nNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
         time.sleep(0.01)
@@ -117,8 +117,8 @@ def send_keystroke():
     else:
         print(f"{nNIR} window not found")
     # -- old NIR input
-    oNIR = "NIRx NIRStar 15.3"
-    oNIR_hwnd = win32gui.FindWindow(None, oNIR)
+    oNIR = "NIRx NIRStar"
+    oNIR_hwnd = find_window_with_partial_name(oNIR)
     if oNIR_hwnd:
         PostMessage(oNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
         time.sleep(0.01)
@@ -192,6 +192,7 @@ def main():
     screen.fill((0, 0, 0))
     display_message(screen, font, "+")
     pygame.display.flip()
+    send_keystroke()
     # -- update progress file
     if progress_file:
         status = "Initial resting state."
@@ -199,6 +200,7 @@ def main():
     # -- wait for the resting period (60 seconds)
     if wait_period(screen, RESTING_STATE, progress_file, status, 5, 10):
         return
+    send_keystroke()
     
     # Initial 3-second countdown
     for i in range(3, 0, -1):
