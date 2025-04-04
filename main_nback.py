@@ -115,7 +115,7 @@ def send_keystroke():
     
     # -- new NIR input
     nNIR = "Aurora fNIRS"
-    nNIR_hwnd = win32gui.FindWindow(None, nNIR)
+    nNIR_hwnd = find_window_with_partial_name(nNIR)
     if nNIR_hwnd:
         PostMessage(nNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
         time.sleep(0.01)
@@ -124,8 +124,8 @@ def send_keystroke():
         print(f"{nNIR} window not found")
         
     # -- old NIR input
-    oNIR = "NIRx NIRStar 15.3"
-    oNIR_hwnd = win32gui.FindWindow(None, oNIR)
+    oNIR = "NIRx NIRStar"
+    oNIR_hwnd = find_window_with_partial_name(oNIR)
     if oNIR_hwnd:
         PostMessage(oNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
         time.sleep(0.01)
@@ -147,8 +147,8 @@ def send_keystroke():
         print(f"{nEEG} window not found")
         
     # -- old EEG input
-    oEEG = "EMOTIV"
-    oEEG_hwnd = win32gui.FindWindow(None, oEEG)
+    oEEG = "EmotivPRO"
+    oEEG_hwnd = find_window_with_partial_name(oEEG)
     if oEEG_hwnd:
         PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
         time.sleep(0.01)
