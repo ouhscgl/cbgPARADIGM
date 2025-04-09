@@ -108,9 +108,12 @@ class ControlPanel:
         self.process = None
         self.temp_file = None
         
+        # Track if experiment is complete but window still open
+        self.experiment_complete = False
+        
         # Setup periodic progress check
         self.check_progress()
-
+    
     def validate_subject_id(self):
         subject = self.subject_id.get().strip()
         if not subject:
@@ -140,6 +143,14 @@ class ControlPanel:
             messagebox.showerror("Error", f"Could not start tutorial: {str(e)}")
 
     def start_experiment(self):
+        # Check if there's a current experiment running
+        if self.process and self.process.poll() is None and not self.experiment_complete:
+            messagebox.showerror("Error", "An experiment is already running")
+            return
+            
+        # Reset experiment_complete flag for new experiment
+        self.experiment_complete = False
+        
         subject = self.validate_subject_id()
         if not subject:
             return
@@ -199,6 +210,7 @@ class ControlPanel:
             # Update initial status
             self.status_label.config(text=f"Experiment '{experiment_name}' started...")
             self.percentage_label.config(text="0%")
+            self.progress_var.set(0)
             
         except Exception as e:
             messagebox.showerror("Error", f"Could not start experiment: {str(e)}")
@@ -209,19 +221,23 @@ class ControlPanel:
 
     def check_progress(self):
         """Check progress file and update progress bar"""
-        if self.process and self.temp_file:
+        if self.process:
             # Check if process is still running
             returncode = self.process.poll()
             
             if returncode is not None:
-                # Process finished
-                self.debug_label.config(text=f"Process ended with code: {returncode}")
-                self.cleanup()
-                self.progress_var.set(100)
-                self.status_label.config(text="Completed")
-                self.percentage_label.config(text="100%")
-                self.start_button.state(['!disabled'])
-                self.experiment_dropdown.state(['!disabled'])
+                # Process has finished (either just now or earlier)
+                
+                # If we haven't already marked it complete, do so now
+                if not self.experiment_complete:
+                    self.debug_label.config(text=f"Process ended with code: {returncode}")
+                    self.cleanup()
+                    self.progress_var.set(100)
+                    self.status_label.config(text="Completed (Window still open)")
+                    self.percentage_label.config(text="100%")
+                    self.start_button.state(['!disabled'])
+                    self.experiment_dropdown.state(['!disabled'])
+                    self.experiment_complete = True
             else:
                 # Process still running, check progress
                 try:
@@ -230,18 +246,28 @@ class ControlPanel:
                         progress = data.get("progress", 0)
                         status = data.get("status", "Running...")
                         
-                        self.progress_var.set(progress)
-                        self.status_label.config(text=status)
-                        self.percentage_label.config(text=f"{progress}%")
-                        self.debug_label.config(text=f"Process running: {progress}% - {status}")
+                        # If progress is 100%, consider the experiment complete
+                        if progress >= 99.9:
+                            self.progress_var.set(100)
+                            self.status_label.config(text="Completed")
+                            self.percentage_label.config(text="100%")
+                            self.start_button.state(['!disabled'])
+                            self.experiment_dropdown.state(['!disabled'])
+                            self.experiment_complete = True
+                        else:
+                            self.progress_var.set(progress)
+                            self.status_label.config(text=status)
+                            self.percentage_label.config(text=f"{progress}%")
+                            self.debug_label.config(text=f"Process running: {progress}% - {status}")
                 except Exception as e:
                     self.debug_label.config(text=f"Error reading progress: {str(e)}")
                 
         # Schedule next check
         self.root.after(100, self.check_progress)
-
+    
+    # -- main cleanup funcion
     def cleanup(self):
-        """Clean up temporary files and process"""
+        """Clean up temporary files"""
         if self.temp_file:
             try:
                 self.temp_file.close()
@@ -249,11 +275,13 @@ class ControlPanel:
             except Exception as e:
                 self.debug_label.config(text=f"Cleanup error: {str(e)}")
             self.temp_file = None
-        self.process = None
-
+    # --  entry for cleanup function
     def __del__(self):
         """Ensure cleanup on exit"""
         self.cleanup()
+        # If there's a running process, terminate it
+        if self.process and self.process.poll() is None:
+            self.process.terminate()
 
 def main():
     root = tk.Tk()

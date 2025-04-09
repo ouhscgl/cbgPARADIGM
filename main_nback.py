@@ -21,7 +21,7 @@ SAVE_PATH   = r"C:\Projects"
 EXPERIMENT_PROFILES = {
     "TBI_letter": {
         "stim_type": "letter_stimulus.csv",
-        "rest_period": 72000,
+        "rest_period": 1,
         "rest_states": ["open"],
     },
     "NRA_letter": {
@@ -168,7 +168,8 @@ def check_for_quit():
                 return True
     return False
 
-def display_message(screen, font, message, wait=0, custom_font_size=None):
+def display_message(screen, font, message, wait=0, custom_font_size=None, progress_file=None, status=None, progress_start=None, progress_end=None):
+    """Display message with optional progress updates during wait period"""
     bg_color = (0,0,0)
     font_color = (255,255,255)
     
@@ -191,91 +192,241 @@ def display_message(screen, font, message, wait=0, custom_font_size=None):
         screen.blit(text[line], rect[line])  
     
     pygame.display.flip()
+    
     if wait:
         start_time = pygame.time.get_ticks()
         while pygame.time.get_ticks() - start_time < wait:
+            # Update progress frequently during wait periods if progress file is provided
+            if progress_file and status and progress_start is not None and progress_end is not None:
+                elapsed = pygame.time.get_ticks() - start_time
+                progress_percent = round(progress_start + (elapsed / wait) * (progress_end - progress_start), 2)
+                update_progress(progress_file, progress_percent, status)
+                
+            # Check for quit events
             if check_for_quit():
                 return True
+                
+            # Small delay to prevent high CPU usage but update frequently
+            pygame.time.wait(50)  # Update every 50ms like fingertapping
     return False
 
 def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
     """Run the appropriate rest states based on experiment profile"""
+    # Rest states should take 0-30% of the total progress
+    total_rest_progress = 30.0
+    progress_per_state = total_rest_progress / len(rest_states) if rest_states else 0
+    
     for enum, state in enumerate(rest_states):
+        # Calculate start and end progress for this rest state
+        progress_start = enum * progress_per_state
+        progress_end = (enum + 1) * progress_per_state
+        
         if progress_file:
-            update_progress(progress_file, (enum+1)*5, "Resting state in progress...")
+            update_progress(progress_file, progress_start, f"Starting rest state {enum+1}/{len(rest_states)}...")
         
         if state == 'closed':
-            if display_message(screen, font, MSG_REST_CLOSED, CLC_INSTR):
+            # Show instructions (takes 20% of this state's progress)
+            instr_progress_start = progress_start
+            instr_progress_end = progress_start + (progress_per_state * 0.2)
+            
+            if display_message(screen, font, MSG_REST_CLOSED, CLC_INSTR, 
+                              progress_file=progress_file, 
+                              status=f"Rest state {enum+1}: instructions (eyes closed)", 
+                              progress_start=instr_progress_start, 
+                              progress_end=instr_progress_end):
                 return True
+                
             send_keystroke()
-            if display_message(screen, font, "", rest_period, custom_font_size=300):
+            
+            # Rest period (takes remaining 80% of this state's progress)
+            rest_progress_start = instr_progress_end
+            rest_progress_end = progress_end
+            
+            if display_message(screen, font, "", rest_period, custom_font_size=300,
+                              progress_file=progress_file, 
+                              status=f"Rest state {enum+1}: in progress (eyes closed)",
+                              progress_start=rest_progress_start, 
+                              progress_end=rest_progress_end):
                 return True
         
         elif state == 'open':
-            if display_message(screen, font, MSG_REST_OPEN, CLC_INSTR):
+            # Show instructions (takes 20% of this state's progress)
+            instr_progress_start = progress_start
+            instr_progress_end = progress_start + (progress_per_state * 0.2)
+            
+            if display_message(screen, font, MSG_REST_OPEN, CLC_INSTR,
+                              progress_file=progress_file, 
+                              status=f"Rest state {enum+1}: instructions (eyes open)",
+                              progress_start=instr_progress_start, 
+                              progress_end=instr_progress_end):
                 return True
+                
             send_keystroke()
-            if display_message(screen, font, "+", rest_period, custom_font_size=300):
+            
+            # Rest period (takes remaining 80% of this state's progress)
+            rest_progress_start = instr_progress_end
+            rest_progress_end = progress_end
+            
+            if display_message(screen, font, "+", rest_period, custom_font_size=300,
+                              progress_file=progress_file, 
+                              status=f"Rest state {enum+1}: in progress (eyes open)",
+                              progress_start=rest_progress_start, 
+                              progress_end=rest_progress_end):
                 return True
         
         elif state == 'none':
             pass
         
     if progress_file:
-        update_progress(progress_file, 30, "Rest state complete.")
+        update_progress(progress_file, 30, "Rest states complete. Proceeding to task.")
     return False
 
-def run_trials(screen, font, stimulus, stim_type, progress_file=None):
+def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id=None):
     """Run the cognitive trials portion of the experiment"""
     # -- Initialize output storage variables
     temp_st, temp_sm, temp_er, temp_ar, temp_rt = [], [], [], [], []
+    results_df = pd.DataFrame()  # Empty DataFrame to store results
+    
+    # Trials take 30-90% of the total progress (60% total)
+    total_trials_progress = 60.0
+    progress_per_trial_type = total_trials_progress / len(stim_type) if stim_type else 0
+    
+    # Create a white rectangle that's half the screen height
+    rect_size = height_screen // 2  # Half of screen height
+    rectangle = pygame.Rect((width_screen - rect_size) // 2, (height_screen - rect_size) // 2, rect_size, rect_size)
+    rectangle.center = (width_screen // 2, height_screen // 2)  # Center on screen
+    
     # -- Iterate through stimuli
     for enum, i in enumerate(stim_type):
+        # Calculate progress percentage for this trial block
+        progress_start = 30.0 + (enum * progress_per_trial_type)
+        progress_end = 30.0 + ((enum + 1) * progress_per_trial_type)
+        
         # Insert update
         if progress_file:
-            update_progress(progress_file, 40+10*enum, f"Performing {i}")
-        # Display instruction screen    
-        if display_message(screen, font, MSG_INSTR[enum], CLC_INSTR):
+            update_progress(progress_file, progress_start, f"Starting trial block: {i}")
+            
+        # Display instruction screen (takes 10% of this trial type's progress)
+        instr_progress_start = progress_start
+        instr_progress_end = progress_start + (progress_per_trial_type * 0.1)
+        
+        if display_message(screen, font, MSG_INSTR[enum], CLC_INSTR,
+                          progress_file=progress_file,
+                          status=f"Instructions for {i}",
+                          progress_start=instr_progress_start,
+                          progress_end=instr_progress_end):
             return pd.DataFrame()  # Return empty DataFrame if quit
+            
         # Set response
         response = stimulus.iloc[:, stimulus.columns.get_loc(i) + 1]
         # Insert markers
         send_keystroke()
         
-        for stim, resp in zip(stimulus[i], response):
+        # Stimuli take remaining 90% of this trial type's progress
+        stimuli_progress_start = instr_progress_end
+        stimuli_progress_end = progress_end
+        
+        # Calculate progress increment per stimulus
+        stim_count = len(stimulus[i])
+        progress_per_stim = (stimuli_progress_end - stimuli_progress_start) / stim_count if stim_count > 0 else 0
+        
+        for idx, (stim, resp) in enumerate(zip(stimulus[i], response)):
+            # Progress for this individual stimulus
+            stim_progress_start = stimuli_progress_start + (idx * progress_per_stim)
+            stim_progress_end = stimuli_progress_start + ((idx + 1) * progress_per_stim)
+            
+            # Update progress for each stimulus
+            if progress_file:
+                update_progress(progress_file, stim_progress_start, 
+                               f"Processing stimulus {idx+1}/{stim_count} in {i}")
+            
             start_time = pygame.time.get_ticks()
             key_pressed = None
             timepressed = np.inf
             
-            woodpecker = random.uniform(0.9,1.1)
-            while pygame.time.get_ticks() - start_time < woodpecker * (CLC_STIMU + CLC_INTER):
+            # Progress tracking variables
+            last_update_time = start_time
+            update_interval = 50  # Update every 50ms
+            
+            woodpecker = random.uniform(0.9, 1.1)
+            total_duration = woodpecker * (CLC_STIMU + CLC_INTER)
+            
+            while pygame.time.get_ticks() - start_time < total_duration:
                 current_time = pygame.time.get_ticks() - start_time
-                display_message(screen, font, str(stim) if current_time < CLC_STIMU else "+")
+                is_stimulus_phase = current_time < CLC_STIMU
                 
+                # Fill screen with black background
+                screen.fill((0, 0, 0))
+                
+                # Draw the white rectangle
+                pygame.draw.rect(screen, (255, 255, 255), rectangle, 2)
+                
+                if is_stimulus_phase:
+                    # Display the stimulus letter/number in white 
+                    stim_font = pygame.font.SysFont(None, 300)
+                    text = stim_font.render(str(stim), True, (255, 255, 255))  # White text
+                    rect = text.get_rect(center=(width_screen//2, height_screen//2))
+                    screen.blit(text, rect)
+                else:
+                    # Empty fixation cross as requested (still showing the white rectangle)
+                    fix_font = pygame.font.SysFont(None, 300)
+                    text = fix_font.render("", True, (255, 255, 255))  # Empty text, black color
+                    rect = text.get_rect(center=(width_screen//2, height_screen//2))
+                    screen.blit(text, rect)
+                
+                pygame.display.flip()
+                
+                # Check for events
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
-                        return pd.DataFrame()
+                        return results_df
                     if event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_c and (pygame.key.get_mods() & pygame.KMOD_CTRL):
-                            return pd.DataFrame()
+                            return results_df
                         elif key_pressed is None:
                             key_pressed = event.key
                             timepressed = current_time / 1000
-                            
+                
+                # Update progress more frequently
+                current_update_time = pygame.time.get_ticks()
+                if progress_file and (current_update_time - last_update_time >= update_interval):
+                    progress_percent = stim_progress_start + (current_time / total_duration) * (stim_progress_end - stim_progress_start)
+                    phase_name = "Stimulus" if is_stimulus_phase else "Fixation"
+                    update_progress(progress_file, progress_percent, 
+                                   f"{phase_name} {idx+1}/{stim_count} in {i}")
+                    last_update_time = current_update_time
+                
+                # Small delay to prevent high CPU usage
+                pygame.time.wait(10)
+                
             print(f"Key pressed: {key_pressed} @{timepressed}")
             temp_st.append(i)
             temp_sm.append(stim)
             temp_er.append(resp)
             temp_ar.append(key_pressed)
             temp_rt.append(timepressed)
+            
+            # Save data after each user input
+            # Update the results DataFrame
+            results_df = pd.DataFrame({
+                'StimulusType'    : temp_st, 
+                'Stimulus'        : temp_sm, 
+                'ExpectedResponse': temp_er, 
+                'ActualResponse'  : temp_ar, 
+                'ReactionTime'    : temp_rt
+            })
+            
+            # Save interim results if subject_id is provided
+            if subject_id and subject_id != "UNKNOWN":
+                save_results(results_df, Path(SAVE_PATH), subject_id, interim=True)
+        
+        # Update progress at end of trial block
+        if progress_file:
+            update_progress(progress_file, progress_end, f"Completed trial block: {i}")
 
-    return pd.DataFrame({'StimulusType'    : temp_st, 
-                         'Stimulus'        : temp_sm, 
-                         'ExpectedResponse': temp_er, 
-                         'ActualResponse'  : temp_ar, 
-                         'ReactionTime'    : temp_rt})
+    return results_df
 
-def save_results(results, save_path, subject_id):
+def save_results(results, save_path, subject_id, interim=False):
     """Save results using the appropriate method for the experiment profile"""
     if results.empty or subject_id == "UNKNOWN":
         return False
@@ -286,8 +437,11 @@ def save_results(results, save_path, subject_id):
         # Create project directory if it doesn't exist
         project_dir = os.path.join(save_path, project)
         os.makedirs(project_dir, exist_ok=True)
-        # Save to project subdirectory
-        save_file = os.path.join(project_dir, f"{subject_id}.csv")
+        
+        # Add interim suffix if this is an interim save
+        filename = f"{subject_id}_interim.csv" if interim else f"{subject_id}.csv"
+        save_file = os.path.join(project_dir, filename)
+        
         results.to_csv(save_file, index=False)
         return True
     
@@ -344,7 +498,8 @@ def main():
             print(f"Debug: Error writing to progress file: {e}")
     
     # Waiting room
-    while True:
+    waiting = True
+    while waiting:
         clock.tick(60)
         display_message(screen, font, MSG_INTRO)
         
@@ -353,29 +508,37 @@ def main():
             
         keys = pygame.key.get_pressed()
         if keys[pygame.K_w]:
-            break
+            waiting = False
+            
+        # Small delay to prevent high CPU usage
+        pygame.time.wait(50)
     
     # Run the appropriate rest states based on profile
     if run_rest_states(screen, font, profile["rest_states"], profile["rest_period"], args.progress_file):
         return  # Early exit if user quits during rest states
     
     # Cognitive trial
-    results = run_trials(screen, font, stimulus, stim_type, args.progress_file)
+    results = run_trials(screen, font, stimulus, stim_type, args.progress_file, args.subject_id)
     
     if args.progress_file:
-        update_progress(args.progress_file, 90, "Saving results...")
+        update_progress(progress_file=args.progress_file, progress=90, status="Saving final results...")
     
     # Save results using the appropriate method
     save_results(results, Path(SAVE_PATH), args.subject_id)
     
     if args.progress_file:
-        update_progress(args.progress_file, 95, "Finishing up...")
+        update_progress(progress_file=args.progress_file, progress=95, status="Finishing up...")
     
-    display_message(screen, font, MSG_CLOSE)
-    pygame.time.wait(CLC_CLOSE)
+    # Show closing message with progress updates
+    if display_message(screen, font, MSG_CLOSE, CLC_CLOSE,
+                      progress_file=args.progress_file,
+                      status="Finishing up...",
+                      progress_start=95,
+                      progress_end=100):
+        return
     
     if args.progress_file:
-        update_progress(args.progress_file, 100, "Complete")
+        update_progress(progress_file=args.progress_file, progress=100, status="Complete")
     
     # Keep the black screen until manual close or ctrl+c
     while True:
@@ -383,6 +546,7 @@ def main():
             return
         screen.fill((0,0,0))
         pygame.display.flip()
+        pygame.time.wait(50)  # Small delay to prevent high CPU usage
 
 if __name__ == "__main__":
     main()

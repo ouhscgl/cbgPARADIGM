@@ -172,15 +172,20 @@ def main():
     # -- update progress file
     if progress_file:
         update_progress(progress_file, 0, "Setup complete. Press any key to continue...")
-    # -- wait for keypress to begin
+    # Lobby
+    # -- enter waiting room
     waiting = True
     while waiting:
         for event in pygame.event.get():
+            # -- quit on quit
             if event.type == pygame.QUIT:
                 pygame.quit()
                 return
             if event.type == pygame.KEYDOWN:
-                waiting = False
+                # -- continue to stimulus on [ W ]
+                if event.key == pygame.K_w:
+                    waiting = False
+                # -- quit on Ctrl + C
                 if event.key == pygame.K_c and (pygame.key.get_mods() & pygame.KMOD_CTRL):
                     pygame.quit()
                     return
