@@ -50,7 +50,7 @@ LETTER_INSTRUCTIONS = [
     ['Any time you see', 'W', 'press', '[ Button ]'],
     ['Any time you see', 'the same letter back to back', 'press', '[ Button ]'],
     ['Any time you see', 'W', 'press', '[ Button ]'],
-    ['Any time you see', 'a letter that matches the second to last,', 'letter that you saw', 'press', '[ Button ]']
+    ['Any time you see', 'a letter that matches the second to last,', 'letter that you saw', 'press [ Button ]']
 ]
 
 # Instructions for number stimulus
@@ -58,7 +58,7 @@ NUMBER_INSTRUCTIONS = [
     ['Any time you see', '8', 'press', '[ Button ]'],
     ['Any time you see', 'the same number back to back', 'press', '[ Button ]'],
     ['Any time you see', '8', 'press', '[ Button ]'],
-    ['Any time you see', 'a number that matches the second to last,', 'number that you saw', 'press', '[ Button ]']
+    ['Any time you see', 'a number that matches the second to last,', 'number that you saw', 'press [ Button ]']
 ]
 
 # Common message constants
