@@ -45,20 +45,28 @@ EXPERIMENT_PROFILES = {
     }
 }
 
+# Instructions for letter stimulus
+LETTER_INSTRUCTIONS = [
+    ['Any time you see', 'W', 'press', '[ Button ]'],
+    ['Any time you see', 'the same letter back to back', 'press', '[ Button ]'],
+    ['Any time you see', 'W', 'press', '[ Button ]'],
+    ['Any time you see', 'a letter that matches the second to last,', 'letter that you saw', 'press', '[ Button ]']
+]
+
+# Instructions for number stimulus
+NUMBER_INSTRUCTIONS = [
+    ['Any time you see', '8', 'press', '[ Button ]'],
+    ['Any time you see', 'the same number back to back', 'press', '[ Button ]'],
+    ['Any time you see', '8', 'press', '[ Button ]'],
+    ['Any time you see', 'a number that matches the second to last,', 'number that you saw', 'press', '[ Button ]']
+]
+
 # Common message constants
 MSG_INTRO = ['WORKING MEMORY EXERCISE','PLEASE GET COMFORTABLE BEFORE WE', 
              'PERFORM BASELINE MEASUREMENTS','READY?']
 MSG_POSTREST = ['RESTING STATE IS COMPLETE','ARE YOU READY?']
 
-MSG_INSTR = [['Any time you see','W','press', '[ Button ]'],
-             ['Any time you see','the same letter back to back',
-                                     'press', '[ Button ]'],
-             ['Any time you see','W','press', '[ Button ]'],
-             ['Any time you see','a letter that matches the second to last,',
-              'letter that you saw', 'press', '[ Button ]']]
-
 # Rest state messages
-
 MSG_REST_CLOSED = ['Please close your eyes']
 
 MSG_REST_OPEN = ['Please keep your eyes open',
@@ -86,6 +94,19 @@ def init_game():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 120)
     return screen, clock, font
+
+def ensure_window_focus(window_handle, max_attempts=20, delay_ms=50):
+    """Attempt to set window focus with multiple retries"""
+    for attempt in range(max_attempts):
+        try:
+            win32gui.SetForegroundWindow(window_handle)
+            return True  # Success
+        except Exception as e:
+            print(f"Focus attempt {attempt+1}/{max_attempts} failed: {e}")
+            pygame.time.wait(delay_ms)
+    
+    print(f"Failed to focus window after {max_attempts} attempts")
+    return False
 
 def update_progress(progress_file, progress, status):
     """Update progress file with current progress and status"""
@@ -221,8 +242,8 @@ def check_for_quit():
                 return True
     return False
 
-def display_message(screen, font, message, wait=0, custom_font_size=None, progress_file=None, status=None, progress_start=None, progress_end=None):
-    """Display message with optional progress updates during wait period"""
+def display_message(screen, font, message, wait=0, custom_font_size=None, progress_file=None, status=None, progress_start=None, progress_end=None, image_path=None):
+    """Display message with optional progress updates during wait period and optional image"""
     bg_color = (0,0,0)
     font_color = (255,255,255)
     
@@ -230,16 +251,38 @@ def display_message(screen, font, message, wait=0, custom_font_size=None, progre
     text = []
     rect = []
     
+    # Load and display image if provided
+    message_y_offset = 0
+    if image_path and os.path.exists(image_path):
+        try:
+            image = pygame.image.load(image_path)
+            # Resize image if needed (you can adjust this)
+            max_img_height = height_screen // 3
+            image_rect = image.get_rect()
+            if image_rect.height > max_img_height:
+                scale_factor = max_img_height / image_rect.height
+                new_width = int(image_rect.width * scale_factor)
+                image = pygame.transform.scale(image, (new_width, max_img_height))
+            
+            # Position the image above the text
+            image_rect = image.get_rect(center=(width_screen//2, height_screen//4))
+            screen.blit(image, image_rect)
+            
+            # Adjust message position to be below the image
+            message_y_offset = image_rect.height // 2 + 20  # 20px spacing
+        except Exception as e:
+            print(f"Error loading image {image_path}: {e}")
+    
     if not isinstance(message, list):
         # Single message - use custom font size if provided, otherwise larger font
         display_font = pygame.font.SysFont(None, custom_font_size if custom_font_size else 300)
         text.append(display_font.render(message, True, font_color))
-        rect.append(text[0].get_rect(center=(width_screen//2, height_screen//2)))
+        rect.append(text[0].get_rect(center=(width_screen//2, height_screen//2 + message_y_offset)))
     else:
         # Multiple messages - use standard font size
         for i, line in enumerate(message):
             text.append(font.render(line, True, font_color))
-            rect.append(text[i].get_rect(center=(width_screen//2, height_screen//2 + ((i-1)*120))))
+            rect.append(text[i].get_rect(center=(width_screen//2, height_screen//2 + ((i-1)*120) + message_y_offset)))
     
     for line in range(len(text)):
         screen.blit(text[line], rect[line])  
@@ -262,6 +305,13 @@ def display_message(screen, font, message, wait=0, custom_font_size=None, progre
             # Small delay to prevent high CPU usage but update frequently
             pygame.time.wait(50)  # Update every 50ms like fingertapping
     return False
+
+def get_instructions(stim_type):
+    """Return the appropriate instructions based on stimulus type"""
+    if "number" in stim_type.lower():
+        return NUMBER_INSTRUCTIONS
+    else:
+        return LETTER_INSTRUCTIONS
 
 def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
     """Run the appropriate rest states based on experiment profile"""
@@ -334,12 +384,22 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
         update_progress(progress_file, 30, "Rest states complete. Proceeding to task.")
     return False
 
-def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id=None):
+def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id=None, profile=None):
     pygame_hwnd = win32gui.FindWindow(None, WINDOW_NAME)
     """Run the cognitive trials portion of the experiment"""
     # -- Initialize output storage variables
     temp_st, temp_sm, temp_er, temp_ar, temp_rt = [], [], [], [], []
     results_df = pd.DataFrame()  # Empty DataFrame to store results
+    
+    # Get the appropriate instructions based on the stimulus type
+    instructions = get_instructions(profile["stim_type"])
+    
+    # Get the instruction images path (located in _resources/images)
+    resource_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
+    images_path = resource_path / 'images'
+    
+    # Ensure images directory exists
+    os.makedirs(images_path, exist_ok=True)
     
     # Trials take 30-90% of the total progress (60% total)
     total_trials_progress = 60.0
@@ -359,16 +419,31 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
         # Insert update
         if progress_file:
             update_progress(progress_file, progress_start, f"Starting trial block: {i}")
-            
+        
+        # Look for a task-specific image for this trial
+        image_path = None
+        possible_image_paths = [
+            images_path / f"{i.lower()}.png",
+            images_path / f"{i.lower()}.jpg",
+            images_path / f"task_{enum+1}.png",
+            images_path / f"task_{enum+1}.jpg"
+        ]
+        
+        for path in possible_image_paths:
+            if path.exists():
+                image_path = str(path)
+                break
+                
         # Display instruction screen (takes 10% of this trial type's progress)
         instr_progress_start = progress_start
         instr_progress_end = progress_start + (progress_per_trial_type * 0.1)
         
-        if display_message(screen, font, MSG_INSTR[enum], CLC_INSTR,
+        if display_message(screen, font, instructions[enum], CLC_INSTR,
                           progress_file=progress_file,
                           status=f"Instructions for {i}",
                           progress_start=instr_progress_start,
-                          progress_end=instr_progress_end):
+                          progress_end=instr_progress_end,
+                          image_path=image_path):
             return pd.DataFrame()  # Return empty DataFrame if quit
             
         # Set response
@@ -406,10 +481,9 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
             total_duration = woodpecker * (CLC_STIMU + CLC_INTER)
             
             while pygame.time.get_ticks() - start_time < total_duration:
-                try:
-                    win32gui.SetForegroundWindow(pygame_hwnd)
-                except:
-                    print('No.')
+                # Try to ensure focus with our new function
+                ensure_window_focus(pygame_hwnd)
+                
                 current_time = pygame.time.get_ticks() - start_time
                 is_stimulus_phase = current_time < CLC_STIMU
                 
@@ -475,8 +549,8 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
             })
             
             # Save interim results if subject_id is provided
-            if subject_id and subject_id != "UNKNOWN":
-                save_results(results_df, Path(SAVE_PATH), subject_id, interim=True)
+            if subject_id and subject_id != "UNKNOWN" and profile:
+                save_results(results_df, Path(SAVE_PATH), subject_id, profile.get("appendix", ""), interim=True)
         
         # Update progress at end of trial block
         if progress_file:
@@ -484,7 +558,7 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
 
     return results_df
 
-def save_results(results, save_path, subject_id, interim=False):
+def save_results(results, save_path, subject_id, profile_appendix="", interim=False):
     """Save results using the appropriate method for the experiment profile"""
     if results.empty or subject_id == "UNKNOWN":
         return False
@@ -496,8 +570,12 @@ def save_results(results, save_path, subject_id, interim=False):
         project_dir = os.path.join(save_path, project)
         os.makedirs(project_dir, exist_ok=True)
         
-        # Add interim suffix if this is an interim save
-        filename = f"{subject_id}_interim.csv" if interim else f"{subject_id}.csv"
+        # Add interim suffix if this is an interim save and include the profile appendix
+        if interim:
+            filename = f"{subject_id}_interim{profile_appendix}.csv"
+        else:
+            filename = f"{subject_id}{profile_appendix}.csv"
+        
         save_file = os.path.join(project_dir, filename)
         
         results.to_csv(save_file, index=False)
@@ -557,10 +635,7 @@ def main():
             print(f"Debug: Error writing to progress file: {e}")
     
     # Waiting room
-    try:
-        win32gui.SetForegroundWindow(pygame_hwnd)
-    except:
-        pass
+    ensure_window_focus(pygame_hwnd)
     waiting = True
     while waiting:
         clock.tick(60)
@@ -581,10 +656,7 @@ def main():
         return  # Early exit if user quits during rest states
     
     # Waiting room
-    try:
-        win32gui.SetForegroundWindow(pygame_hwnd)
-    except:
-        pass
+    ensure_window_focus(pygame_hwnd)
     waiting = True
     while waiting:
         clock.tick(60)
@@ -598,16 +670,16 @@ def main():
         pygame.time.wait(50)
     
     # Cognitive trial
-    results = run_trials(screen, font, stimulus, stim_type, args.progress_file, args.subject_id)
+    results = run_trials(screen, font, stimulus, stim_type, args.progress_file, args.subject_id, profile)
     
     if args.progress_file:
-        update_progress(progress_file=args.progress_file, progress=90, status="Saving final results...")
+        update_progress(args.progress_file, 90, "Saving final results...")
     
     # Save results using the appropriate method
-    save_results(results, Path(SAVE_PATH), args.subject_id)
+    save_results(results, Path(SAVE_PATH), args.subject_id, profile.get("appendix", ""))
     
     if args.progress_file:
-        update_progress(progress_file=args.progress_file, progress=95, status="Finishing up...")
+        update_progress(args.progress_file, 95, "Finishing up...")
     
     # Show closing message with progress updates
     if display_message(screen, font, MSG_CLOSE, CLC_CLOSE,
@@ -618,7 +690,7 @@ def main():
         return
     
     if args.progress_file:
-        update_progress(progress_file=args.progress_file, progress=100, status="Complete")
+        update_progress(args.progress_file, 100, "Complete")
     
     # Keep the black screen until manual close or ctrl+c
     while True:
