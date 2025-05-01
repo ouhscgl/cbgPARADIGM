@@ -161,17 +161,7 @@ def send_keystroke():
         nEEG = 'g.Recorder'
         nEEG_hwnd = find_window_with_partial_name(nEEG)
         if nEEG_hwnd:
-            try:
-                # Try a different approach to activate window
-                import ctypes
-                user32 = ctypes.WinDLL('user32', use_last_error=True)
-                user32.AllowSetForegroundWindow(win32gui.GetWindowThreadProcessId(nEEG_hwnd)[1])
-                win32gui.SetForegroundWindow(nEEG_hwnd)
-                time.sleep(0.05)
-            except Exception as e:
-                print(f"Could not set {nEEG} as foreground: {e}")
-                
-            # Still try to send keystroke
+            win32gui.SetForegroundWindow(nEEG_hwnd)  
             keybd_event(0x38, 0, 0, 0)  # key down for '8'
             time.sleep(0.03)
             keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
@@ -187,9 +177,11 @@ def send_keystroke():
         oEEG = "EmotivPRO"
         oEEG_hwnd = find_window_with_partial_name(oEEG)
         if oEEG_hwnd:
-            PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
-            time.sleep(0.03)
-            PostMessage(oEEG_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
+            win32gui.SetForegroundWindow(oEEG_hwnd)
+            time.sleep(0.01)
+            PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, 0x38, 0)
+            time.sleep(0.01)
+            PostMessage(oEEG_hwnd, win32con.WM_KEYUP, 0x38, 0)
             success = True
             print(f"Sent keystroke to {oEEG}")
         else:
@@ -554,6 +546,7 @@ def main():
     stim_root = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
     stimulus = pd.read_csv(stim_root / profile["stim_type"])
     stim_type = [col for col in stimulus.columns if not col.endswith('response')]
+    pygame_hwnd = win32gui.FindWindow(None, WINDOW_NAME)
     
     if args.progress_file:
         # Test writing to progress file
@@ -564,6 +557,10 @@ def main():
             print(f"Debug: Error writing to progress file: {e}")
     
     # Waiting room
+    try:
+        win32gui.SetForegroundWindow(pygame_hwnd)
+    except:
+        pass
     waiting = True
     while waiting:
         clock.tick(60)
@@ -584,6 +581,10 @@ def main():
         return  # Early exit if user quits during rest states
     
     # Waiting room
+    try:
+        win32gui.SetForegroundWindow(pygame_hwnd)
+    except:
+        pass
     waiting = True
     while waiting:
         clock.tick(60)
