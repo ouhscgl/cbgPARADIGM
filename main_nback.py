@@ -144,6 +144,8 @@ def send_keystroke():
         oNIR_hwnd = win32gui.FindWindow(None, "NIRx NIRStar 15.3")
         if oNIR_hwnd: 
             # Still try to send message even if setting foreground failed
+            win32gui.SetForegroundWindow(oNIR_hwnd)
+            time.sleep(0.01)
             PostMessage(oNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
             time.sleep(0.01)
             PostMessage(oNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
