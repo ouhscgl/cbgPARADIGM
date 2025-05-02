@@ -133,13 +133,6 @@ def find_window_with_partial_name(partial_name):
 
 def send_keystroke():
     """Unified function to send keystroke events to all possible devices with robust error handling"""
-    # Store the current foreground window to restore later
-    try:
-        current_hwnd = win32gui.GetForegroundWindow()
-    except Exception as e:
-        print(f"Error getting current foreground window: {e}")
-        current_hwnd = None
-    
     # Track if any keystroke was sent successfully
     success = False
     
@@ -148,10 +141,13 @@ def send_keystroke():
         nNIR = "Aurora fNIRS"
         nNIR_hwnd = find_window_with_partial_name(nNIR)
         if nNIR_hwnd:
-            ensure_window_focus(nNIR_hwnd) 
-            PostMessage(nNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
-            time.sleep(0.03)
-            PostMessage(nNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
+            ensure_window_focus(nNIR_hwnd)
+            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
+            time.sleep(0.01)
+            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
+            # PostMessage(nNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
+            # time.sleep(0.03)
+            # PostMessage(nNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
             success = True
             print(f"Sent keystroke to {nNIR}")
         else:
@@ -167,9 +163,12 @@ def send_keystroke():
             # Still try to send message even if setting foreground failed
             ensure_window_focus(oNIR_hwnd) 
             time.sleep(0.01)
-            PostMessage(oNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
+            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
             time.sleep(0.01)
-            PostMessage(oNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
+            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
+            # PostMessage(oNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
+            # time.sleep(0.01)
+            # PostMessage(oNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
             success = True
             print(f"Sent keystroke to {oNIR}")
         else:
@@ -200,6 +199,9 @@ def send_keystroke():
         if oEEG_hwnd:
             ensure_window_focus(oEEG_hwnd)
             time.sleep(0.01)
+            # keybd_event(0x38, 0, 0, 0)  # key down for 'F8'
+            # time.sleep(0.01)
+            # keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
             PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, 0x38, 0)
             time.sleep(0.01)
             PostMessage(oEEG_hwnd, win32con.WM_KEYUP, 0x38, 0)
@@ -213,17 +215,7 @@ def send_keystroke():
     # Try to return to pygame window
     try:
         pygame_hwnd = win32gui.FindWindow(None, WINDOW_NAME)
-        if pygame_hwnd:
-            try:
-                # Try a different approach to activate window
-                import ctypes
-                user32 = ctypes.WinDLL('user32', use_last_error=True)
-                user32.AllowSetForegroundWindow(win32gui.GetWindowThreadProcessId(pygame_hwnd)[1])
-                win32gui.SetForegroundWindow(pygame_hwnd)
-            except Exception as e:
-                print(f"Could not set pygame window as foreground: {e}")
-        else:
-            print(f"{WINDOW_NAME} window not found")
+        ensure_window_focus(pygame_hwnd)
     except Exception as e:
         print(f"Error returning to pygame window: {e}")
     
