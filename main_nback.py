@@ -148,7 +148,7 @@ def send_keystroke():
         nNIR = "Aurora fNIRS"
         nNIR_hwnd = find_window_with_partial_name(nNIR)
         if nNIR_hwnd:
-            # Try to send message without setting foreground first
+            ensure_window_focus(nNIR_hwnd) 
             PostMessage(nNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
             time.sleep(0.03)
             PostMessage(nNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
@@ -165,7 +165,7 @@ def send_keystroke():
         oNIR_hwnd = win32gui.FindWindow(None, "NIRx NIRStar 15.3")
         if oNIR_hwnd: 
             # Still try to send message even if setting foreground failed
-            win32gui.SetForegroundWindow(oNIR_hwnd)
+            ensure_window_focus(oNIR_hwnd) 
             time.sleep(0.01)
             PostMessage(oNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
             time.sleep(0.01)
@@ -182,7 +182,7 @@ def send_keystroke():
         nEEG = 'g.Recorder'
         nEEG_hwnd = find_window_with_partial_name(nEEG)
         if nEEG_hwnd:
-            win32gui.SetForegroundWindow(nEEG_hwnd)  
+            ensure_window_focus(nEEG_hwnd)  
             keybd_event(0x38, 0, 0, 0)  # key down for '8'
             time.sleep(0.03)
             keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
@@ -198,7 +198,7 @@ def send_keystroke():
         oEEG = "EmotivPRO"
         oEEG_hwnd = find_window_with_partial_name(oEEG)
         if oEEG_hwnd:
-            win32gui.SetForegroundWindow(oEEG_hwnd)
+            ensure_window_focus(oEEG_hwnd)
             time.sleep(0.01)
             PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, 0x38, 0)
             time.sleep(0.01)
