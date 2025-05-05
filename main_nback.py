@@ -13,6 +13,9 @@ import random
 import re
 import argparse
 from pathlib import Path
+import ctypes
+from ctypes import wintypes
+import time
 
 # Window name constant
 WINDOW_NAME = "Working Memory Task"
@@ -84,6 +87,40 @@ CLC_INTER = 1500   # 1.5 seconds
 width_screen = 1920
 height_screen = 1080
 
+# Define necessary structures and constants for SendInput
+user32 = ctypes.WinDLL('user32', use_last_error=True)
+
+# Input type constants
+INPUT_KEYBOARD = 1
+
+# Virtual key codes
+VK_F8 = 0x77  # F8 key
+VK_8 = 0x38   # 8 key
+
+# Define structures for SendInput
+KEYEVENTF_KEYUP = 0x0002
+
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = [
+        ("wVk", wintypes.WORD),
+        ("wScan", wintypes.WORD),
+        ("dwFlags", wintypes.DWORD),
+        ("time", wintypes.DWORD),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong))
+    ]
+
+class INPUT_UNION(ctypes.Union):
+    _fields_ = [
+        ("ki", KEYBDINPUT),
+        ("pad", ctypes.c_ubyte * 24)  # Ensure the union is large enough
+    ]
+
+class INPUT(ctypes.Structure):
+    _fields_ = [
+        ("type", wintypes.DWORD),
+        ("union", INPUT_UNION)
+    ]
+
 # Set up pygame
 def init_game():
     pygame.init()
@@ -131,8 +168,61 @@ def find_window_with_partial_name(partial_name):
     win32gui.EnumWindows(enum_windows_callback, results)
     return results[0][0] if results else None
 
-def send_keystroke():
-    """Unified function to send keystroke events to all possible devices with robust error handling"""
+def send_keystroke_with_sendinput(key_code, delay_sec=0.01):
+    """Send a keystroke using SendInput API with a delay between key down and key up"""
+    # Prepare key down input
+    key_down = INPUT(
+        type=INPUT_KEYBOARD,
+        union=INPUT_UNION(
+            ki=KEYBDINPUT(
+                wVk=key_code,
+                wScan=0,
+                dwFlags=0,
+                time=0,
+                dwExtraInfo=ctypes.pointer(ctypes.c_ulong(0))
+            )
+        )
+    )
+    
+    # Create array with just the key down input
+    inputs_down = (INPUT * 1)(key_down)
+    
+    # Send key down input
+    result_down = user32.SendInput(1, ctypes.byref(inputs_down), ctypes.sizeof(INPUT))
+    
+    # Wait for the specified delay
+    time.sleep(delay_sec)
+    
+    # Prepare key up input
+    key_up = INPUT(
+        type=INPUT_KEYBOARD,
+        union=INPUT_UNION(
+            ki=KEYBDINPUT(
+                wVk=key_code,
+                wScan=0,
+                dwFlags=KEYEVENTF_KEYUP,
+                time=0,
+                dwExtraInfo=ctypes.pointer(ctypes.c_ulong(0))
+            )
+        )
+    )
+    
+    # Create array with just the key up input
+    inputs_up = (INPUT * 1)(key_up)
+    
+    # Send key up input
+    result_up = user32.SendInput(1, ctypes.byref(inputs_up), ctypes.sizeof(INPUT))
+    
+    # Return True if both inputs were sent successfully
+    return result_down == 1 and result_up == 1
+
+def send_keystroke(window_name="Working Memory Task", use_sendinput=False):
+    """Unified function to send keystroke events to all possible devices with robust error handling
+    
+    Parameters:
+    window_name (str): Name of the pygame window to return focus to
+    use_sendinput (bool): If True, use SendInput API instead of keybd_event/PostMessage
+    """
     # Track if any keystroke was sent successfully
     success = False
     
@@ -142,13 +232,17 @@ def send_keystroke():
         nNIR_hwnd = find_window_with_partial_name(nNIR)
         if nNIR_hwnd:
             ensure_window_focus(nNIR_hwnd)
-            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
-            time.sleep(0.01)
-            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
-            # PostMessage(nNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
-            # time.sleep(0.03)
-            # PostMessage(nNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
-            success = True
+            time.sleep(0.01)  # Small delay after focusing for stability
+            
+            if use_sendinput:
+                if send_keystroke_with_sendinput(VK_F8, delay_sec=0.03):
+                    success = True
+            else:
+                keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
+                time.sleep(0.03)  # Consistent 30ms delay
+                keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
+                success = True
+                
             print(f"Sent keystroke to {nNIR}")
         else:
             print(f"{nNIR} window not found")
@@ -160,16 +254,18 @@ def send_keystroke():
         oNIR = "NIRx NIRStar"
         oNIR_hwnd = win32gui.FindWindow(None, "NIRx NIRStar 15.3")
         if oNIR_hwnd: 
-            # Still try to send message even if setting foreground failed
-            ensure_window_focus(oNIR_hwnd) 
-            time.sleep(0.01)
-            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
-            time.sleep(0.01)
-            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
-            # PostMessage(oNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
-            # time.sleep(0.01)
-            # PostMessage(oNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
-            success = True
+            ensure_window_focus(oNIR_hwnd)
+            time.sleep(0.01)  # Small delay after focusing for stability
+            
+            if use_sendinput:
+                if send_keystroke_with_sendinput(VK_F8, delay_sec=0.03):
+                    success = True
+            else:
+                keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
+                time.sleep(0.03)  # Consistent 30ms delay
+                keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
+                success = True
+                
             print(f"Sent keystroke to {oNIR}")
         else:
             print(f"{oNIR} window not found")
@@ -181,31 +277,42 @@ def send_keystroke():
         nEEG = 'g.Recorder'
         nEEG_hwnd = find_window_with_partial_name(nEEG)
         if nEEG_hwnd:
-            ensure_window_focus(nEEG_hwnd)  
-            keybd_event(0x38, 0, 0, 0)  # key down for '8'
-            time.sleep(0.03)
-            keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
-            success = True
+            ensure_window_focus(nEEG_hwnd)
+            time.sleep(0.01)  # Small delay after focusing for stability
+            
+            if use_sendinput:
+                if send_keystroke_with_sendinput(VK_8, delay_sec=0.03):
+                    success = True
+            else:
+                keybd_event(0x38, 0, 0, 0)  # key down for '8'
+                time.sleep(0.03)  # Consistent 30ms delay
+                keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
+                success = True
+                
             print(f"Sent keystroke to {nEEG}")
         else:
             print(f"{nEEG} window not found")
     except Exception as e:
         print(f"Error sending keystroke to {nEEG}: {e}")
         
-    # -- old EEG input
+    # -- old EEG input (EmotivPRO seems to need PostMessage instead)
     try:
         oEEG = "EmotivPRO"
         oEEG_hwnd = find_window_with_partial_name(oEEG)
         if oEEG_hwnd:
             ensure_window_focus(oEEG_hwnd)
-            time.sleep(0.01)
-            # keybd_event(0x38, 0, 0, 0)  # key down for 'F8'
-            # time.sleep(0.01)
-            # keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
-            PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, 0x38, 0)
-            time.sleep(0.01)
-            PostMessage(oEEG_hwnd, win32con.WM_KEYUP, 0x38, 0)
-            success = True
+            time.sleep(0.01)  # Small delay after focusing for stability
+            
+            if use_sendinput:
+                if send_keystroke_with_sendinput(VK_8, delay_sec=0.03):
+                    success = True
+            else:
+                # Using PostMessage for EmotivPRO as it seems to require this method
+                PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, 0x38, 0)
+                time.sleep(0.03)  # Consistent 30ms delay
+                PostMessage(oEEG_hwnd, win32con.WM_KEYUP, 0x38, 0)
+                success = True
+                
             print(f"Sent keystroke to {oEEG}")
         else:
             print(f"{oEEG} window not found")
@@ -214,7 +321,7 @@ def send_keystroke():
     
     # Try to return to pygame window
     try:
-        pygame_hwnd = win32gui.FindWindow(None, WINDOW_NAME)
+        pygame_hwnd = win32gui.FindWindow(None, window_name)
         ensure_window_focus(pygame_hwnd)
     except Exception as e:
         print(f"Error returning to pygame window: {e}")
@@ -331,7 +438,7 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
                               progress_end=instr_progress_end):
                 return True
                 
-            send_keystroke()
+            send_keystroke(use_sendinput=True)
             
             # Rest period (takes remaining 80% of this state's progress)
             rest_progress_start = instr_progress_end
@@ -356,7 +463,7 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
                               progress_end=instr_progress_end):
                 return True
                 
-            send_keystroke()
+            send_keystroke(use_sendinput=True)
             
             # Rest period (takes remaining 80% of this state's progress)
             rest_progress_start = instr_progress_end
@@ -441,7 +548,7 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
         # Set response
         response = stimulus.iloc[:, stimulus.columns.get_loc(i) + 1]
         # Insert markers
-        send_keystroke()
+        send_keystroke(use_sendinput=True)
         
         # Stimuli take remaining 90% of this trial type's progress
         stimuli_progress_start = instr_progress_end
