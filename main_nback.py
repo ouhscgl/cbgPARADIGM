@@ -13,6 +13,7 @@ import random
 import re
 import argparse
 from pathlib import Path
+import pyautogui
 
 # Window name constant
 WINDOW_NAME = "Working Memory Task"
@@ -97,6 +98,7 @@ def init_game():
 
 def ensure_window_focus(window_handle, max_attempts=20, delay_ms=50):
     """Attempt to set window focus with multiple retries"""
+    pyautogui.press("alt")
     for attempt in range(max_attempts):
         try:
             win32gui.SetForegroundWindow(window_handle)
@@ -145,6 +147,7 @@ def send_keystroke():
             keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
             time.sleep(0.01)
             keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
+            time.sleep(0.01)
             # PostMessage(nNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
             # time.sleep(0.03)
             # PostMessage(nNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)

@@ -9,6 +9,7 @@ import win32con
 from win32api import PostMessage, keybd_event
 import time
 import os
+import pyautogui
 
 # User defined variables
 # -- variable names, paths
@@ -36,6 +37,7 @@ def update_progress(progress_file, progress, status):
 
 def ensure_window_focus(window_handle, max_attempts=20, delay_ms=50):
     """Attempt to set window focus with multiple retries"""
+    pyautogui.press("alt")
     for attempt in range(max_attempts):
         try:
             win32gui.SetForegroundWindow(window_handle)
