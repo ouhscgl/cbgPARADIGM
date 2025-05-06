@@ -4,9 +4,12 @@ import random
 import string
 import os
 
-# Defined constant variables
-SAVE_PATH = r"C:\Users\biochemlab\Downloads"
+# Import shared utility functions
+from paradigm_utils import (
+    check_for_quit, display_message
+)
 
+# Defined constant variables
 MSG_INTRO = ['WORKING MEMORY TUTORIAL','']
 
 MSG_INSTR = [['Any time you see','W','press', '[ Spacebar ]'],
@@ -39,47 +42,6 @@ def init_game():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 120)
     return screen, clock, font
-
-def check_for_quit():
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            return True
-        if event.type == pygame.KEYDOWN:
-            # Check if ctrl+c is pressed (both windows and mac)
-            if event.key == pygame.K_c and (pygame.key.get_mods() & pygame.KMOD_CTRL):
-                pygame.quit()
-                return True
-    return False
-
-def display_message(screen, font, message, wait=0):
-    bg_color = (0,0,0)
-    font_color = (255,255,255)
-    
-    screen.fill(bg_color)
-    text = []
-    rect = []
-    
-    if not isinstance(message, list):
-        # Single message - use larger font
-        large_font = pygame.font.SysFont(None, 300)
-        text.append(large_font.render(message, True, font_color))
-        rect.append(text[0].get_rect(center=(width_screen//2, height_screen//2)))
-    else:
-        # Multiple messages - use standard font size
-        for i, line in enumerate(message):
-            text.append(font.render(line, True, font_color))
-            rect.append(text[i].get_rect(center=(width_screen//2, height_screen//2 + ((i-1)*120))))
-    
-    for line in range(len(text)):
-        screen.blit(text[line], rect[line])  
-    
-    pygame.display.flip()
-    if wait:
-        pygame.time.wait(wait)
-        if check_for_quit():
-            return True
-    return False
 
 def generate_tutorial_sequence():
     
@@ -149,7 +111,8 @@ def run_tutorial_trials(screen, font):
     
     while trial_num < 3:
         sequences, expected_responses = generate_tutorial_sequence()
-        if display_message(screen, font, MSG_INSTR[trial_num], CLC_INSTR):
+        if display_message(screen, font, MSG_INSTR[trial_num], CLC_INSTR,
+                         width_screen=width_screen, height_screen=height_screen):
             return
         
         sequence = sequences[trial_num]
@@ -164,7 +127,8 @@ def run_tutorial_trials(screen, font):
 
             while pygame.time.get_ticks() - start_time < CLC_STIMU + CLC_INTER:
                 current_time = pygame.time.get_ticks() - start_time
-                display_message(screen, font, str(stim) if current_time < CLC_STIMU else "+")
+                display_message(screen, font, str(stim) if current_time < CLC_STIMU else "+",
+                              width_screen=width_screen, height_screen=height_screen)
                 
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
@@ -180,19 +144,22 @@ def run_tutorial_trials(screen, font):
             
             # Check for errors
             if (key_pressed == 1 and resp == 0):  # False Positive
-                if display_message(screen, font, MSG_FALSE_POSITIVE, 5000):  # 5 second wait
+                if display_message(screen, font, MSG_FALSE_POSITIVE, 5000,
+                                 width_screen=width_screen, height_screen=height_screen):  # 5 second wait
                     return
                 restart_needed = True
                 break
             elif (key_pressed == 0 and resp == 1):  # False Negative
-                if display_message(screen, font, MSG_FALSE_NEGATIVE, 5000):  # 5 second wait
+                if display_message(screen, font, MSG_FALSE_NEGATIVE, 5000,
+                                 width_screen=width_screen, height_screen=height_screen):  # 5 second wait
                     return
                 restart_needed = True
                 break
             
             # If we've completed the sequence successfully
             if idx == len(sequence) - 1:
-                if display_message(screen, font, MSG_CORRECT_TRIAL, 5000):  # 5 second wait
+                if display_message(screen, font, MSG_CORRECT_TRIAL, 5000,
+                                 width_screen=width_screen, height_screen=height_screen):  # 5 second wait
                     return
 
         if not restart_needed:
@@ -206,7 +173,8 @@ def main():
     # Waiting room
     while True:
         clock.tick(60)
-        display_message(screen, font, MSG_INTRO)
+        display_message(screen, font, MSG_INTRO,
+                      width_screen=width_screen, height_screen=height_screen)
         
         if check_for_quit():
             return
@@ -217,7 +185,8 @@ def main():
     
     # Tutorial trials    
     run_tutorial_trials(screen, font)
-    display_message(screen, font, MSG_CLOSE)
+    display_message(screen, font, MSG_CLOSE,
+                  width_screen=width_screen, height_screen=height_screen)
     pygame.time.wait(CLC_CLOSE)
     
     # Keep the black screen until manual close or ctrl+c

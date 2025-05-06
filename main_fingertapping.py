@@ -4,12 +4,15 @@ import pygame
 import sys
 import json
 from pathlib import Path
-import win32gui
-import win32con
-from win32api import PostMessage, keybd_event
 import time
 import os
 import pyautogui
+
+# Import shared utility functions
+from paradigm_utils import (
+    update_progress, send_keystroke, check_for_quit,
+    display_message, wait_period, play_audio
+)
 
 # User defined variables
 # -- variable names, paths
@@ -23,219 +26,38 @@ REPETITIONS   = 3
 SCREEN_WIDTH  = 1920
 SCREEN_HEIGHT = 1080
 
-def update_progress(progress_file, progress, status):
-    if not progress_file:
-        return
-    try:
-        with open(progress_file, 'w') as f:
-            json.dump({
-                "progress": progress,
-                "status": status
-            }, f)
-    except Exception as e:
-        print(f"Error updating progress: {e}")
-
-def ensure_window_focus(window_handle, max_attempts=20, delay_ms=50):
-    """Attempt to set window focus with multiple retries"""
-    pyautogui.press("alt")
-    for attempt in range(max_attempts):
-        try:
-            win32gui.SetForegroundWindow(window_handle)
-            return True  # Success
-        except Exception as e:
-            print(f"Focus attempt {attempt+1}/{max_attempts} failed: {e}")
-            pygame.time.wait(delay_ms)
-    
-    print(f"Failed to focus window after {max_attempts} attempts")
-    return False
-
-def check_for_quit():
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            return True
-        if event.type == pygame.KEYDOWN:
-            # Check if ctrl+c is pressed (both windows and mac)
-            if event.key == pygame.K_c and (pygame.key.get_mods() & pygame.KMOD_CTRL):
-                pygame.quit()
-                return True
-            # Also exit on Escape key
-            if event.key == pygame.K_ESCAPE:
-                pygame.quit()
-                return True
-    return False
-
-def display_message(screen, font, message, position=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2)):
-    text = font.render(message, True, (255, 255, 255))
-    rect = text.get_rect(center=position)
-    screen.blit(text, rect)
-    pygame.display.flip()
-
-def wait_period(screen, duration_ms, progress_file=None, status=None, progress_start=0, progress_end=0):
-    start_time = pygame.time.get_ticks()
-    
-    while pygame.time.get_ticks() - start_time < duration_ms:
-        if check_for_quit():
-            return True
-            
-        # Update progress if needed
-        if progress_file and status and progress_end > progress_start:
-            elapsed = pygame.time.get_ticks() - start_time
-            progress_percent = round(progress_start + (elapsed / duration_ms) * (progress_end - progress_start), 2)
-            update_progress(progress_file, progress_percent, status)
-            
-        # Ensure the screen stays black
-        # screen.fill((0, 0, 0))
-        # pygame.display.flip()
-        
-        # Small delay to prevent high CPU usage
-        pygame.time.wait(100)
-        
-    return False
-
-def play_audio(audio_file):
-    try:
-        pygame.mixer.music.load(audio_file)
-        pygame.mixer.music.play()
-        
-        # Wait until the audio is finished playing
-        while pygame.mixer.music.get_busy():
-            if check_for_quit():
-                return True
-            pygame.time.wait(100)
-    except Exception as e:
-        print(f"Error playing audio {audio_file}: {e}")
-        
-    return False
-
-def find_window_with_partial_name(partial_name):
-    def enum_windows_callback(hwnd, results):
-        window_text = win32gui.GetWindowText(hwnd)
-        if partial_name in window_text:
-            results.append((hwnd, window_text))
-        return True
-   
-    results = []
-    win32gui.EnumWindows(enum_windows_callback, results)
-    return results[0][0] if results else None
-
-def send_keystroke():
-    """Unified function to send keystroke events to all possible devices with robust error handling"""
-    # Track if any keystroke was sent successfully
-    success = False
-    
-    # -- new NIR input
-    try:
-        nNIR = "Aurora fNIRS"
-        nNIR_hwnd = find_window_with_partial_name(nNIR)
-        if nNIR_hwnd:
-            ensure_window_focus(nNIR_hwnd)
-            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
-            time.sleep(0.01)
-            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
-            # PostMessage(nNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
-            # time.sleep(0.03)
-            # PostMessage(nNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
-            success = True
-            print(f"Sent keystroke to {nNIR}")
-        else:
-            print(f"{nNIR} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {nNIR}: {e}")
-    
-    # -- old NIR input
-    try:
-        oNIR = "NIRx NIRStar"
-        oNIR_hwnd = win32gui.FindWindow(None, "NIRx NIRStar 15.3")
-        if oNIR_hwnd: 
-            # Still try to send message even if setting foreground failed
-            ensure_window_focus(oNIR_hwnd) 
-            time.sleep(0.01)
-            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
-            time.sleep(0.01)
-            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
-            # PostMessage(oNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
-            # time.sleep(0.01)
-            # PostMessage(oNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
-            success = True
-            print(f"Sent keystroke to {oNIR}")
-        else:
-            print(f"{oNIR} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {oNIR}: {e}")
-        
-    # -- new EEG input
-    try:
-        nEEG = 'g.Recorder'
-        nEEG_hwnd = find_window_with_partial_name(nEEG)
-        if nEEG_hwnd:
-            ensure_window_focus(nEEG_hwnd)  
-            keybd_event(0x38, 0, 0, 0)  # key down for '8'
-            time.sleep(0.03)
-            keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
-            success = True
-            print(f"Sent keystroke to {nEEG}")
-        else:
-            print(f"{nEEG} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {nEEG}: {e}")
-        
-    # -- old EEG input
-    try:
-        oEEG = "EmotivPRO"
-        oEEG_hwnd = find_window_with_partial_name(oEEG)
-        if oEEG_hwnd:
-            ensure_window_focus(oEEG_hwnd)
-            time.sleep(0.01)
-            keybd_event(0x38, 0, 0, 0)  # key down for 'F8'
-            time.sleep(0.01)
-            keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
-            # PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, 0x38, 0)
-            # time.sleep(0.01)
-            # PostMessage(oEEG_hwnd, win32con.WM_KEYUP, 0x38, 0)
-            success = True
-            print(f"Sent keystroke to {oEEG}")
-        else:
-            print(f"{oEEG} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {oEEG}: {e}")
-    
-    # Try to return to pygame window
-    try:
-        pygame_hwnd = win32gui.FindWindow(None, WINDOW_NAME)
-        ensure_window_focus(pygame_hwnd)
-    except Exception as e:
-        print(f"Error returning to pygame window: {e}")
-    
-    # Return overall success status
-    return success
-
 def main():
-    # Command line arguments
+    # Setup paradigm
+    # -- get subject ID and progress file from command window arguments
     subject_id = sys.argv[1] if len(sys.argv) > 1 else "UNKNOWN"
     progress_file = sys.argv[2] if len(sys.argv) > 2 else None
     print(f"Subject ID: {subject_id}")
     
-    # Initialize pygame
+    # -- initialize pygame
     pygame.mixer.init()
     pygame.init()
     pygame.display.set_caption(WINDOW_NAME)
     
-    # Initial setup
     # -- create display, initialize font and audio path
     audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), display=1)
     font = pygame.font.SysFont(None, 120)
     status = ''
-    # -- display initial instructions
+    
+    # Lobby 01: Welcome screen
+    # -- display welcome message
     screen.fill((0, 0, 0))
-    display_message(screen, font, "The exercise will begin shortly")  # Fixed spelling
-    display_message(screen, font, "Please get comfortable.", (SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80))
+    display_message(screen, font, "The exercise will begin shortly", 
+                   width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
+    display_message(screen, font, "Please get comfortable.", 
+                   position=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80),
+                   width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
     pygame.display.flip()
+    
     # -- update progress file
     if progress_file:
         update_progress(progress_file, 0, "Setup complete. Press any key to continue...")
-    # Lobby
+
     # -- enter waiting room
     waiting = True
     while waiting:
@@ -252,29 +74,35 @@ def main():
                 if event.key == pygame.K_c and (pygame.key.get_mods() & pygame.KMOD_CTRL):
                     pygame.quit()
                     return
+    
     # -- clear screen
     screen.fill((0, 0, 0))
     pygame.display.flip()
     
-    # Initial resting period with fixation cross
+    # Resting state
+    # -- display resting message
     screen.fill((0, 0, 0))
-    display_message(screen, font, "+")
+    display_message(screen, font, "+", width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
     pygame.display.flip()
-    send_keystroke()
+    send_keystroke(WINDOW_NAME)
+    
     # -- update progress file
     if progress_file:
         status = "Initial resting state."
         update_progress(progress_file, 5, status)
-    # -- wait for the resting period (60 seconds)
+    
+    # -- wait for the resting period
     if wait_period(screen, RESTING_STATE, progress_file, status, 5, 10):
         return
-    send_keystroke()
+    send_keystroke(WINDOW_NAME)
     
     # Initial 3-second countdown
+    # -- display countdown message
     for i in range(3, 0, -1):
         # -- visual feedback
         screen.fill((0, 0, 0))
-        display_message(screen, font, f"Starting in {i}...")
+        display_message(screen, font, f"Starting in {i}...", 
+                     width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
         pygame.display.flip()
         # -- audio feedback
         if play_audio(audio_path / f'countdown_{i}.mp3'):
@@ -283,12 +111,14 @@ def main():
         pygame.time.wait(1000)
         if check_for_quit():
             return
-    # -- clear screen
-    screen.fill((0, 0, 0))
-    pygame.display.flip()
+    
     # --update progress file
     if progress_file:
         update_progress(progress_file, 10, "Beginning exercise sequence...")
+
+    # -- clear screen
+    screen.fill((0, 0, 0))
+    pygame.display.flip()
     
     # Exercise sequence
     # -- persistent variable setup
@@ -307,9 +137,10 @@ def main():
                 update_progress(progress_file, current_progress, status)
             
             # -- play directional instruction (LEFT / RIGHT)
-            send_keystroke()
+            send_keystroke(WINDOW_NAME)
             screen.fill((0, 0, 0))
-            display_message(screen, font, f"{direction}")
+            display_message(screen, font, f"{direction}", 
+                         width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
             pygame.display.flip()
             audio_file = str(audio_path / f"{direction}.mp3")
             if play_audio(audio_file):
@@ -332,7 +163,7 @@ def main():
                 update_progress(progress_file, current_progress + progress_per_segment / 2, status)
             
             # -- play rest instruction
-            send_keystroke()
+            send_keystroke(WINDOW_NAME)
             screen.fill((0, 0, 0))
             pygame.display.flip()
             audio_file = str(audio_path / "STOP.mp3")
@@ -357,8 +188,11 @@ def main():
     
     # -- display terminal instructions
     screen.fill((0, 0, 0))
-    display_message(screen, font, "You have completed the exercise.")
-    display_message(screen, font, "Please stand by.", (SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80))
+    display_message(screen, font, "You have completed the exercise.", 
+                 width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
+    display_message(screen, font, "Please stand by.", 
+                 position=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80),
+                 width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
     pygame.display.flip()
     pygame.time.wait(TASK_DURATION)
     

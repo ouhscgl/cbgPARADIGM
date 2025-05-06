@@ -6,18 +6,22 @@ import sys
 import json
 import os
 import win32gui
-import win32con
-from win32api import PostMessage, keybd_event
-import time
 import random
 import re
 import argparse
 from pathlib import Path
-import pyautogui
+
+# Import shared utility functions
+from paradigm_utils import (
+    update_progress, send_keystroke, check_for_quit,
+    display_message, wait_period, find_window_with_partial_name,
+    ensure_window_focus
+)
 
 # Window name constant
 WINDOW_NAME = "Working Memory Task"
 SAVE_PATH   = r"C:\Projects"
+
 # Define experiment profiles
 EXPERIMENT_PROFILES = {
     "TBI_letter": {
@@ -69,10 +73,8 @@ MSG_POSTREST = ['RESTING STATE IS COMPLETE','ARE YOU READY?']
 
 # Rest state messages
 MSG_REST_CLOSED = ['Please close your eyes']
-
 MSG_REST_OPEN = ['Please keep your eyes open',
                 'focus on the [ + ] symbol']
-
 MSG_CLOSE = ['You have completed the', 'memory exercise.','Please stand by.']
 
 # Timing constants
@@ -95,211 +97,6 @@ def init_game():
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 120)
     return screen, clock, font
-
-def ensure_window_focus(window_handle, max_attempts=20, delay_ms=50):
-    """Attempt to set window focus with multiple retries"""
-    pyautogui.press("alt")
-    for attempt in range(max_attempts):
-        try:
-            win32gui.SetForegroundWindow(window_handle)
-            return True  # Success
-        except Exception as e:
-            print(f"Focus attempt {attempt+1}/{max_attempts} failed: {e}")
-            pygame.time.wait(delay_ms)
-    
-    print(f"Failed to focus window after {max_attempts} attempts")
-    return False
-
-def update_progress(progress_file, progress, status):
-    """Update progress file with current progress and status"""
-    try:
-        with open(progress_file, 'w') as f:
-            json.dump({
-                "progress": progress,
-                "status": status
-            }, f)
-    except Exception as e:
-        print(f"Error updating progress: {e}")
-        pass
-
-def find_window_with_partial_name(partial_name):
-    def enum_windows_callback(hwnd, results):
-        window_text = win32gui.GetWindowText(hwnd)
-        if partial_name in window_text:
-            results.append((hwnd, window_text))
-        return True
-   
-    results = []
-    win32gui.EnumWindows(enum_windows_callback, results)
-    return results[0][0] if results else None
-
-def send_keystroke():
-    """Unified function to send keystroke events to all possible devices with robust error handling"""
-    # Track if any keystroke was sent successfully
-    success = False
-    
-    # -- new NIR input
-    try:
-        nNIR = "Aurora fNIRS"
-        nNIR_hwnd = find_window_with_partial_name(nNIR)
-        if nNIR_hwnd:
-            ensure_window_focus(nNIR_hwnd)
-            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
-            time.sleep(0.01)
-            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
-            time.sleep(0.01)
-            # PostMessage(nNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
-            # time.sleep(0.03)
-            # PostMessage(nNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
-            success = True
-            print(f"Sent keystroke to {nNIR}")
-        else:
-            print(f"{nNIR} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {nNIR}: {e}")
-    
-    # -- old NIR input
-    try:
-        oNIR = "NIRx NIRStar"
-        oNIR_hwnd = win32gui.FindWindow(None, "NIRx NIRStar 15.3")
-        if oNIR_hwnd: 
-            # Still try to send message even if setting foreground failed
-            ensure_window_focus(oNIR_hwnd) 
-            time.sleep(0.01)
-            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
-            time.sleep(0.01)
-            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
-            # PostMessage(oNIR_hwnd, win32con.WM_KEYDOWN, win32con.VK_F8, 0)
-            # time.sleep(0.01)
-            # PostMessage(oNIR_hwnd, win32con.WM_KEYUP, win32con.VK_F8, 0)
-            success = True
-            print(f"Sent keystroke to {oNIR}")
-        else:
-            print(f"{oNIR} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {oNIR}: {e}")
-        
-    # -- new EEG input
-    try:
-        nEEG = 'g.Recorder'
-        nEEG_hwnd = find_window_with_partial_name(nEEG)
-        if nEEG_hwnd:
-            ensure_window_focus(nEEG_hwnd)  
-            keybd_event(0x38, 0, 0, 0)  # key down for '8'
-            time.sleep(0.03)
-            keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
-            success = True
-            print(f"Sent keystroke to {nEEG}")
-        else:
-            print(f"{nEEG} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {nEEG}: {e}")
-        
-    # -- old EEG input
-    try:
-        oEEG = "EmotivPRO"
-        oEEG_hwnd = find_window_with_partial_name(oEEG)
-        if oEEG_hwnd:
-            ensure_window_focus(oEEG_hwnd)
-            time.sleep(0.01)
-            # keybd_event(0x38, 0, 0, 0)  # key down for 'F8'
-            # time.sleep(0.01)
-            # keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
-            PostMessage(oEEG_hwnd, win32con.WM_KEYDOWN, 0x38, 0)
-            time.sleep(0.01)
-            PostMessage(oEEG_hwnd, win32con.WM_KEYUP, 0x38, 0)
-            success = True
-            print(f"Sent keystroke to {oEEG}")
-        else:
-            print(f"{oEEG} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {oEEG}: {e}")
-    
-    # Try to return to pygame window
-    try:
-        pygame_hwnd = win32gui.FindWindow(None, WINDOW_NAME)
-        ensure_window_focus(pygame_hwnd)
-    except Exception as e:
-        print(f"Error returning to pygame window: {e}")
-    
-    # Return overall success status
-    return success
-
-def check_for_quit():
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            return True
-        if event.type == pygame.KEYDOWN:
-            # Check if ctrl+c is pressed (both windows and mac)
-            if event.key == pygame.K_c and (pygame.key.get_mods() & pygame.KMOD_CTRL):
-                pygame.quit()
-                return True
-    return False
-
-def display_message(screen, font, message, wait=0, custom_font_size=None, progress_file=None, status=None, progress_start=None, progress_end=None, image_path=None):
-    """Display message with optional progress updates during wait period and optional image"""
-    bg_color = (0,0,0)
-    font_color = (255,255,255)
-    
-    screen.fill(bg_color)
-    text = []
-    rect = []
-    
-    # Load and display image if provided
-    message_y_offset = 0
-    if image_path and os.path.exists(image_path):
-        try:
-            image = pygame.image.load(image_path)
-            # Resize image if needed (you can adjust this)
-            max_img_height = height_screen // 3
-            image_rect = image.get_rect()
-            if image_rect.height > max_img_height:
-                scale_factor = max_img_height / image_rect.height
-                new_width = int(image_rect.width * scale_factor)
-                image = pygame.transform.scale(image, (new_width, max_img_height))
-            
-            # Position the image above the text
-            image_rect = image.get_rect(center=(width_screen//2, height_screen//4))
-            screen.blit(image, image_rect)
-            
-            # Adjust message position to be below the image
-            message_y_offset = image_rect.height // 2 + 20  # 20px spacing
-        except Exception as e:
-            print(f"Error loading image {image_path}: {e}")
-    
-    if not isinstance(message, list):
-        # Single message - use custom font size if provided, otherwise larger font
-        display_font = pygame.font.SysFont(None, custom_font_size if custom_font_size else 300)
-        text.append(display_font.render(message, True, font_color))
-        rect.append(text[0].get_rect(center=(width_screen//2, height_screen//2 + message_y_offset)))
-    else:
-        # Multiple messages - use standard font size
-        for i, line in enumerate(message):
-            text.append(font.render(line, True, font_color))
-            rect.append(text[i].get_rect(center=(width_screen//2, height_screen//2 + ((i-1)*120) + message_y_offset)))
-    
-    for line in range(len(text)):
-        screen.blit(text[line], rect[line])  
-    
-    pygame.display.flip()
-    
-    if wait:
-        start_time = pygame.time.get_ticks()
-        while pygame.time.get_ticks() - start_time < wait:
-            # Update progress frequently during wait periods if progress file is provided
-            if progress_file and status and progress_start is not None and progress_end is not None:
-                elapsed = pygame.time.get_ticks() - start_time
-                progress_percent = round(progress_start + (elapsed / wait) * (progress_end - progress_start), 2)
-                update_progress(progress_file, progress_percent, status)
-                
-            # Check for quit events
-            if check_for_quit():
-                return True
-                
-            # Small delay to prevent high CPU usage but update frequently
-            pygame.time.wait(50)  # Update every 50ms like fingertapping
-    return False
 
 def get_instructions(stim_type):
     """Return the appropriate instructions based on stimulus type"""
@@ -331,10 +128,12 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
                               progress_file=progress_file, 
                               status=f"Rest state {enum+1}: instructions (eyes closed)", 
                               progress_start=instr_progress_start, 
-                              progress_end=instr_progress_end):
+                              progress_end=instr_progress_end,
+                              width_screen=width_screen,
+                              height_screen=height_screen):
                 return True
                 
-            send_keystroke()
+            send_keystroke(WINDOW_NAME)
             
             # Rest period (takes remaining 80% of this state's progress)
             rest_progress_start = instr_progress_end
@@ -344,7 +143,9 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
                               progress_file=progress_file, 
                               status=f"Rest state {enum+1}: in progress (eyes closed)",
                               progress_start=rest_progress_start, 
-                              progress_end=rest_progress_end):
+                              progress_end=rest_progress_end,
+                              width_screen=width_screen,
+                              height_screen=height_screen):
                 return True
         
         elif state == 'open':
@@ -356,10 +157,12 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
                               progress_file=progress_file, 
                               status=f"Rest state {enum+1}: instructions (eyes open)",
                               progress_start=instr_progress_start, 
-                              progress_end=instr_progress_end):
+                              progress_end=instr_progress_end,
+                              width_screen=width_screen,
+                              height_screen=height_screen):
                 return True
                 
-            send_keystroke()
+            send_keystroke(WINDOW_NAME)
             
             # Rest period (takes remaining 80% of this state's progress)
             rest_progress_start = instr_progress_end
@@ -369,7 +172,9 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
                               progress_file=progress_file, 
                               status=f"Rest state {enum+1}: in progress (eyes open)",
                               progress_start=rest_progress_start, 
-                              progress_end=rest_progress_end):
+                              progress_end=rest_progress_end,
+                              width_screen=width_screen,
+                              height_screen=height_screen):
                 return True
         
         elif state == 'none':
@@ -438,13 +243,15 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
                           status=f"Instructions for {i}",
                           progress_start=instr_progress_start,
                           progress_end=instr_progress_end,
-                          image_path=image_path):
+                          image_path=image_path,
+                          width_screen=width_screen,
+                          height_screen=height_screen):
             return pd.DataFrame()  # Return empty DataFrame if quit
             
         # Set response
         response = stimulus.iloc[:, stimulus.columns.get_loc(i) + 1]
         # Insert markers
-        send_keystroke()
+        send_keystroke(WINDOW_NAME)
         
         # Stimuli take remaining 90% of this trial type's progress
         stimuli_progress_start = instr_progress_end
@@ -476,7 +283,7 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
             total_duration = woodpecker * (CLC_STIMU + CLC_INTER)
             
             while pygame.time.get_ticks() - start_time < total_duration:
-                # Try to ensure focus with our new function
+                # Try to ensure focus with our function
                 ensure_window_focus(pygame_hwnd)
                 
                 current_time = pygame.time.get_ticks() - start_time
@@ -634,7 +441,8 @@ def main():
     waiting = True
     while waiting:
         clock.tick(60)
-        display_message(screen, font, MSG_INTRO)
+        display_message(screen, font, MSG_INTRO, 
+                      width_screen=width_screen, height_screen=height_screen)
         
         if check_for_quit():
             return
@@ -655,7 +463,8 @@ def main():
     waiting = True
     while waiting:
         clock.tick(60)
-        display_message(screen, font, MSG_POSTREST)
+        display_message(screen, font, MSG_POSTREST, 
+                     width_screen=width_screen, height_screen=height_screen)
         
         if check_for_quit():
             return
@@ -681,7 +490,9 @@ def main():
                       progress_file=args.progress_file,
                       status="Finishing up...",
                       progress_start=95,
-                      progress_end=100):
+                      progress_end=100,
+                      width_screen=width_screen,
+                      height_screen=height_screen):
         return
     
     if args.progress_file:
