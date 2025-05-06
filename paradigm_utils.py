@@ -9,10 +9,9 @@ import pygame
 import json
 import time
 import os
-import sys
 import win32gui
 import win32con
-from win32api import PostMessage, keybd_event
+from win32api import keybd_event
 import pyautogui
 
 def ensure_window_focus(window_handle, max_attempts=20, delay_ms=50):
