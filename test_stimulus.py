@@ -136,7 +136,7 @@ def run_tutorial_trials(screen, font):
                     if event.type == pygame.KEYDOWN:
                         if event.key == pygame.K_c and (pygame.key.get_mods() & pygame.KMOD_CTRL):
                             return
-                        elif key_pressed is None and event.key == pygame.K_SPACE:
+                        elif key_pressed is None and event.key == pygame.K_a:
                             key_pressed = 1
             
             if key_pressed is None:
