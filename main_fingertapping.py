@@ -26,6 +26,9 @@ REPETITIONS   = 3
 SCREEN_WIDTH  = 1920
 SCREEN_HEIGHT = 1080
 
+MSG_INTRO = ['SMALL MOTOR EXERCISE','','PLEASE GET COMFORTABLE BEFORE WE', 
+             'PERFORM BASELINE MEASUREMENTS']
+
 def main():
     # Setup paradigm
     # -- get subject ID and progress file from command window arguments
@@ -41,16 +44,13 @@ def main():
     # -- create display, initialize font and audio path
     audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), display=1)
-    font = pygame.font.SysFont(None, 30)
+    font = pygame.font.SysFont(None, 120)
     status = ''
     
     # Lobby 01: Welcome screen
     # -- display welcome message
     screen.fill((0, 0, 0))
-    display_message(screen, font, "The exercise will begin shortly", 
-                   width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
-    display_message(screen, font, "Please get comfortable.", 
-                   position=(SCREEN_WIDTH//2, SCREEN_HEIGHT//2 + 80),
+    display_message(screen, font, MSG_INTRO, 
                    width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
     pygame.display.flip()
     
