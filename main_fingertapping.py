@@ -41,7 +41,7 @@ def main():
     # -- create display, initialize font and audio path
     audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), display=1)
-    font = pygame.font.SysFont(None, 120)
+    font = pygame.font.SysFont(None, 30)
     status = ''
     
     # Lobby 01: Welcome screen
