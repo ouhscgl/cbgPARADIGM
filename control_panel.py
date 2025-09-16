@@ -39,10 +39,21 @@ class ControlPanel:
         self.use_lsl_var = tk.BooleanVar(value=True)
         self.lsl_checkbox = ttk.Checkbutton(
             recording_frame,
-            text="Use LSL triggers",
-            variable=self.use_lsl_var
+            text="Use LSL triggers (old devices)",
+            variable=self.use_lsl_var,
+            command=self.on_lsl_toggle
         )
         self.lsl_checkbox.pack(anchor="w", pady=2)
+        
+        # LSL status label
+        self.lsl_status_label = ttk.Label(recording_frame, text="LSL: Creating stream...")
+        self.lsl_status_label.pack(anchor="w", pady=2)
+        
+        # Store LSL outlet
+        self.lsl_outlet = None
+        
+        # Initialize LSL stream if checkbox is checked
+        self.on_lsl_toggle()
         
         # Controls frame
         button_frame = ttk.LabelFrame(main_frame, text="Experiment Selection", padding="10")
@@ -122,6 +133,57 @@ class ControlPanel:
         
         # Setup periodic progress check
         self.check_progress()
+    
+    def on_lsl_toggle(self):
+        """Handle LSL checkbox toggle"""
+        if self.use_lsl_var.get():
+            self.create_lsl_stream()
+        else:
+            self.destroy_lsl_stream()
+    
+    def create_lsl_stream(self):
+        """Create LSL stream in control panel"""
+        try:
+            import pylsl
+            print("Control Panel: Creating LSL trigger stream...")
+            info = pylsl.StreamInfo(
+                name='TriggerStream',
+                type='Markers',
+                channel_count=1,
+                nominal_srate=0,
+                channel_format='int32',
+                source_id='paradigm_triggers'
+            )
+            self.lsl_outlet = pylsl.StreamOutlet(info)
+            self.lsl_status_label.config(text="LSL: Stream ready for Aurora connection")
+            
+            # Send initial test trigger
+            self.lsl_outlet.push_sample([999])
+            print("Control Panel: Sent initial test trigger (999)")
+            
+        except ImportError:
+            self.lsl_status_label.config(text="LSL: Error - pylsl not installed")
+            self.lsl_outlet = None
+            messagebox.showerror("LSL Error", 
+                               "pylsl module not found!\n"
+                               "Please install it with: pip install pylsl")
+        except Exception as e:
+            self.lsl_status_label.config(text=f"LSL: Error - {str(e)}")
+            self.lsl_outlet = None
+            print(f"Control Panel: Error creating LSL stream: {e}")
+    
+    def destroy_lsl_stream(self):
+        """Destroy LSL stream"""
+        if self.lsl_outlet:
+            try:
+                del self.lsl_outlet
+                self.lsl_outlet = None
+                self.lsl_status_label.config(text="LSL: Disabled")
+                print("Control Panel: LSL stream destroyed")
+            except Exception as e:
+                print(f"Control Panel: Error destroying LSL stream: {e}")
+        else:
+            self.lsl_status_label.config(text="LSL: Disabled")
 
     def validate_subject_id(self):
         subject = self.subject_id.get().strip()
@@ -291,6 +353,8 @@ class ControlPanel:
     def __del__(self):
         """Ensure cleanup on exit"""
         self.cleanup()
+        # Clean up LSL stream
+        self.destroy_lsl_stream()
         # If there's a running process, terminate it
         if self.process and self.process.poll() is None:
             self.process.terminate()
@@ -298,6 +362,13 @@ class ControlPanel:
 def main():
     root = tk.Tk()
     app = ControlPanel(root)
+    
+    # Handle window close event to clean up LSL
+    def on_closing():
+        app.destroy_lsl_stream()
+        root.destroy()
+    
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
 
 if __name__ == "__main__":
