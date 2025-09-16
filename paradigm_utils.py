@@ -14,6 +14,43 @@ import win32con
 from win32api import keybd_event
 import pyautogui
 
+def create_lsl_outlet():
+    """Create LSL outlet for sending triggers"""
+    global _lsl_outlet
+    try:
+        import pylsl
+        print("Creating LSL trigger stream...")
+        info = pylsl.StreamInfo(
+            name='TriggerStream',
+            type='Markers',
+            channel_count=1,
+            nominal_srate=0,
+            channel_format='int32',
+            source_id='paradigm_triggers'
+        )
+        _lsl_outlet = pylsl.StreamOutlet(info)
+        print("LSL stream created successfully")
+        return True
+    except ImportError:
+        print("Warning: pylsl not available - LSL triggers disabled")
+        return False
+    except Exception as e:
+        print(f"Error creating LSL outlet: {e}")
+        return False
+
+def send_lsl_trigger(trigger_value):
+    """Send LSL trigger"""
+    global _lsl_outlet
+    if _lsl_outlet:
+        try:
+            _lsl_outlet.push_sample([trigger_value])
+            print(f"LSL trigger sent: {trigger_value}")
+            return True
+        except Exception as e:
+            print(f"Error sending LSL trigger: {e}")
+            return False
+    return False
+
 def ensure_window_focus(window_handle, max_attempts=20, delay_ms=50):
     """Attempt to set window focus with multiple retries"""
     pyautogui.press("alt")
@@ -54,20 +91,21 @@ def find_window_with_partial_name(partial_name):
     win32gui.EnumWindows(enum_windows_callback, results)
     return results[0][0] if results else None
 
-def send_keystroke(pygame_window_name=None):
+def send_keystroke(pygame_window_name=None, use_lsl=False):
     """
     Unified function to send keystroke events to all possible devices with robust error handling
     
     Args:
         pygame_window_name: Name of the pygame window to return focus to after sending keystrokes
+        use_lsl: If True, send LSL triggers instead of keystrokes for old NIRS device
     
     Returns:
-        bool: True if any keystroke was sent successfully
+        bool: True if any keystroke/trigger was sent successfully
     """
     # Track if any keystroke was sent successfully
     success = False
     
-    # -- new NIR input
+    # -- new NIR input (always use keystrokes for new device)
     try:
         nNIR = "Aurora fNIRS"
         nNIR_hwnd = find_window_with_partial_name(nNIR)
@@ -83,25 +121,34 @@ def send_keystroke(pygame_window_name=None):
     except Exception as e:
         print(f"Error sending keystroke to {nNIR}: {e}")
     
-    # -- old NIR input
+    # -- old NIR input (use LSL if enabled, otherwise keystrokes)
     try:
         oNIR = "NIRx NIRStar"
-        oNIR_hwnd = win32gui.FindWindow(None, "NIRx NIRStar 15.3")
-        if oNIR_hwnd: 
-            # Still try to send message even if setting foreground failed
-            ensure_window_focus(oNIR_hwnd) 
-            time.sleep(0.01)
-            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
-            time.sleep(0.01)
-            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
-            success = True
-            print(f"Sent keystroke to {oNIR}")
+        if use_lsl:
+            # Send LSL trigger instead of keystroke for old NIRS
+            if send_lsl_trigger(8):  # Use trigger value 8 for old NIRS
+                success = True
+                print(f"Sent LSL trigger to {oNIR}")
+            else:
+                print(f"Failed to send LSL trigger to {oNIR}")
         else:
-            print(f"{oNIR} window not found")
+            # Traditional keystroke method
+            oNIR_hwnd = win32gui.FindWindow(None, "NIRx NIRStar 15.3")
+            if oNIR_hwnd: 
+                # Still try to send message even if setting foreground failed
+                ensure_window_focus(oNIR_hwnd) 
+                time.sleep(0.01)
+                keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
+                time.sleep(0.01)
+                keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
+                success = True
+                print(f"Sent keystroke to {oNIR}")
+            else:
+                print(f"{oNIR} window not found")
     except Exception as e:
-        print(f"Error sending keystroke to {oNIR}: {e}")
+        print(f"Error sending trigger/keystroke to {oNIR}: {e}")
         
-    # -- new EEG input
+    # -- new EEG input (always use keystrokes)
     try:
         nEEG = 'g.Recorder'
         nEEG_hwnd = find_window_with_partial_name(nEEG)
@@ -117,22 +164,31 @@ def send_keystroke(pygame_window_name=None):
     except Exception as e:
         print(f"Error sending keystroke to {nEEG}: {e}")
         
-    # -- old EEG input
+    # -- old EEG input (use LSL if enabled, otherwise keystrokes)
     try:
         oEEG = "EmotivPRO"
-        oEEG_hwnd = find_window_with_partial_name(oEEG)
-        if oEEG_hwnd:
-            ensure_window_focus(oEEG_hwnd)
-            time.sleep(0.01)
-            keybd_event(0x38, 0, 0, 0)  # key down for '8'
-            time.sleep(0.01)
-            keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
-            success = True
-            print(f"Sent keystroke to {oEEG}")
+        if use_lsl:
+            # Send LSL trigger instead of keystroke for old EEG
+            if send_lsl_trigger(8):  # Use trigger value 8 for old EEG
+                success = True
+                print(f"Sent LSL trigger to {oEEG}")
+            else:
+                print(f"Failed to send LSL trigger to {oEEG}")
         else:
-            print(f"{oEEG} window not found")
+            # Traditional keystroke method
+            oEEG_hwnd = find_window_with_partial_name(oEEG)
+            if oEEG_hwnd:
+                ensure_window_focus(oEEG_hwnd)
+                time.sleep(0.01)
+                keybd_event(0x38, 0, 0, 0)  # key down for '8'
+                time.sleep(0.01)
+                keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
+                success = True
+                print(f"Sent keystroke to {oEEG}")
+            else:
+                print(f"{oEEG} window not found")
     except Exception as e:
-        print(f"Error sending keystroke to {oEEG}: {e}")
+        print(f"Error sending trigger/keystroke to {oEEG}: {e}")
     
     # Try to return to pygame window
     if pygame_window_name:

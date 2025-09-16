@@ -15,7 +15,7 @@ from pathlib import Path
 from paradigm_utils import (
     update_progress, send_keystroke, check_for_quit,
     display_message, wait_period, find_window_with_partial_name,
-    ensure_window_focus
+    ensure_window_focus, create_lsl_outlet
 )
 
 # Window name constant
@@ -105,7 +105,7 @@ def get_instructions(stim_type):
     else:
         return LETTER_INSTRUCTIONS
 
-def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
+def run_rest_states(screen, font, rest_states, rest_period, progress_file=None, use_lsl=False):
     """Run the appropriate rest states based on experiment profile"""
     # Rest states should take 0-30% of the total progress
     total_rest_progress = 30.0
@@ -133,7 +133,7 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
                               height_screen=height_screen):
                 return True
                 
-            send_keystroke(WINDOW_NAME)
+            send_keystroke(WINDOW_NAME, use_lsl=use_lsl)
             
             # Rest period (takes remaining 80% of this state's progress)
             rest_progress_start = instr_progress_end
@@ -162,7 +162,7 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
                               height_screen=height_screen):
                 return True
                 
-            send_keystroke(WINDOW_NAME)
+            send_keystroke(WINDOW_NAME, use_lsl=use_lsl)
             
             # Rest period (takes remaining 80% of this state's progress)
             rest_progress_start = instr_progress_end
@@ -184,7 +184,7 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None):
         update_progress(progress_file, 30, "Rest states complete. Proceeding to task.")
     return False
 
-def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id=None, profile=None):
+def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id=None, profile=None, use_lsl=False):
     pygame_hwnd = win32gui.FindWindow(None, WINDOW_NAME)
     """Run the cognitive trials portion of the experiment"""
     # -- Initialize output storage variables
@@ -251,7 +251,7 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
         # Set response
         response = stimulus.iloc[:, stimulus.columns.get_loc(i) + 1]
         # Insert markers
-        send_keystroke(WINDOW_NAME)
+        send_keystroke(WINDOW_NAME, use_lsl=use_lsl)
         
         # Stimuli take remaining 90% of this trial type's progress
         stimuli_progress_start = instr_progress_end
@@ -393,6 +393,8 @@ def parse_arguments():
     parser.add_argument('--profile', default="TBI_letter", 
                         choices=EXPERIMENT_PROFILES.keys(),
                         help='Experiment profile to use')
+    parser.add_argument('--use_lsl', action='store_true', 
+                        help='Use LSL triggers for old NIRS device instead of keystrokes')
     
     # Handle both direct argparse and old-style sys.argv
     if len(sys.argv) == 1:
@@ -405,6 +407,9 @@ def parse_arguments():
         args = parser.parse_args([])
         args.subject_id = subject_id
         args.progress_file = progress_file
+        # Check for LSL flag in remaining arguments
+        if "--use_lsl" in sys.argv:
+            args.use_lsl = True
         return args
     else:
         # New style: parse normally
@@ -420,6 +425,16 @@ def main():
     print(f"Debug: Using profile: {args.profile}")
     print(f"Debug: Subject ID: {args.subject_id}")
     print(f"Debug: Progress file: {args.progress_file}")
+    print(f"Debug: Use LSL: {args.use_lsl}")
+    
+    # Initialize LSL if requested
+    lsl_initialized = False
+    if args.use_lsl:
+        lsl_initialized = create_lsl_outlet()
+        if lsl_initialized:
+            print("LSL outlet created successfully")
+        else:
+            print("Warning: Failed to create LSL outlet, falling back to keystrokes")
     
     # Initialize pygame and other resources
     screen, clock, font = init_game()
@@ -431,7 +446,8 @@ def main():
     if args.progress_file:
         # Test writing to progress file
         try:
-            update_progress(args.progress_file, 0, "Starting up...")
+            lsl_status = " (LSL enabled)" if args.use_lsl and lsl_initialized else ""
+            update_progress(args.progress_file, 0, f"Starting up...{lsl_status}")
             print("Debug: Successfully wrote to progress file")
         except Exception as e:
             print(f"Debug: Error writing to progress file: {e}")
@@ -455,7 +471,8 @@ def main():
         pygame.time.wait(50)
     
     # Run the appropriate rest states based on profile
-    if run_rest_states(screen, font, profile["rest_states"], profile["rest_period"], args.progress_file):
+    if run_rest_states(screen, font, profile["rest_states"], profile["rest_period"], 
+                      args.progress_file, use_lsl=args.use_lsl and lsl_initialized):
         return  # Early exit if user quits during rest states
     
     # Waiting room
@@ -474,7 +491,8 @@ def main():
         pygame.time.wait(50)
     
     # Cognitive trial
-    results = run_trials(screen, font, stimulus, stim_type, args.progress_file, args.subject_id, profile)
+    results = run_trials(screen, font, stimulus, stim_type, args.progress_file, 
+                        args.subject_id, profile, use_lsl=args.use_lsl and lsl_initialized)
     
     if args.progress_file:
         update_progress(args.progress_file, 90, "Saving final results...")
@@ -496,7 +514,8 @@ def main():
         return
     
     if args.progress_file:
-        update_progress(args.progress_file, 100, "Complete")
+        lsl_status = " (LSL mode)" if args.use_lsl and lsl_initialized else ""
+        update_progress(args.progress_file, 100, f"Complete{lsl_status}")
     
     # Keep the black screen until manual close or ctrl+c
     while True:

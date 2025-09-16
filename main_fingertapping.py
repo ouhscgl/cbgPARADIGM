@@ -11,7 +11,7 @@ import pyautogui
 # Import shared utility functions
 from paradigm_utils import (
     update_progress, send_keystroke, check_for_quit,
-    display_message, wait_period, play_audio
+    display_message, wait_period, play_audio, create_lsl_outlet
 )
 
 # User defined variables
@@ -29,12 +29,43 @@ SCREEN_HEIGHT = 1080
 MSG_INTRO = ['SMALL MOTOR EXERCISE','','PLEASE GET COMFORTABLE BEFORE WE', 
              'PERFORM BASELINE MEASUREMENTS']
 
+def parse_arguments():
+    """Parse command line arguments supporting both old and new styles"""
+    # Default values
+    subject_id = "UNKNOWN"
+    progress_file = None
+    use_lsl = False
+    
+    # Handle arguments
+    if len(sys.argv) >= 2:
+        subject_id = sys.argv[1]
+    
+    if len(sys.argv) >= 3:
+        progress_file = sys.argv[2]
+    
+    # Check for LSL flag
+    if "--use_lsl" in sys.argv:
+        use_lsl = True
+        print("LSL mode enabled for old NIRS device")
+    
+    return subject_id, progress_file, use_lsl
+
 def main():
     # Setup paradigm
-    # -- get subject ID and progress file from command window arguments
-    subject_id = sys.argv[1] if len(sys.argv) > 1 else "UNKNOWN"
-    progress_file = sys.argv[2] if len(sys.argv) > 2 else None
+    # -- get arguments from command line
+    subject_id, progress_file, use_lsl = parse_arguments()
     print(f"Subject ID: {subject_id}")
+    print(f"Progress file: {progress_file}")
+    print(f"Use LSL: {use_lsl}")
+    
+    # Initialize LSL if requested
+    lsl_initialized = False
+    if use_lsl:
+        lsl_initialized = create_lsl_outlet()
+        if lsl_initialized:
+            print("LSL outlet created successfully")
+        else:
+            print("Warning: Failed to create LSL outlet, falling back to keystrokes")
     
     # -- initialize pygame
     pygame.mixer.init()
@@ -56,7 +87,8 @@ def main():
     
     # -- update progress file
     if progress_file:
-        update_progress(progress_file, 0, "Setup complete. Press any key to continue...")
+        lsl_status = " (LSL enabled)" if use_lsl and lsl_initialized else ""
+        update_progress(progress_file, 0, f"Setup complete{lsl_status}. Press any key to continue...")
 
     # -- enter waiting room
     waiting = True
@@ -84,7 +116,7 @@ def main():
     screen.fill((0, 0, 0))
     display_message(screen, font, "+", width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
     pygame.display.flip()
-    send_keystroke(WINDOW_NAME)
+    send_keystroke(WINDOW_NAME, use_lsl=use_lsl and lsl_initialized)
     
     # -- update progress file
     if progress_file:
@@ -94,7 +126,7 @@ def main():
     # -- wait for the resting period
     if wait_period(screen, RESTING_STATE, progress_file, status, 5, 10):
         return
-    send_keystroke(WINDOW_NAME)
+    send_keystroke(WINDOW_NAME, use_lsl=use_lsl and lsl_initialized)
     
     # Initial 3-second countdown
     # -- display countdown message
@@ -137,7 +169,7 @@ def main():
                 update_progress(progress_file, current_progress, status)
             
             # -- play directional instruction (LEFT / RIGHT)
-            send_keystroke(WINDOW_NAME)
+            send_keystroke(WINDOW_NAME, use_lsl=use_lsl and lsl_initialized)
             screen.fill((0, 0, 0))
             display_message(screen, font, f"{direction}", 
                          width_screen=SCREEN_WIDTH, height_screen=SCREEN_HEIGHT)
@@ -163,7 +195,7 @@ def main():
                 update_progress(progress_file, current_progress + progress_per_segment / 2, status)
             
             # -- play rest instruction
-            send_keystroke(WINDOW_NAME)
+            send_keystroke(WINDOW_NAME, use_lsl=use_lsl and lsl_initialized)
             screen.fill((0, 0, 0))
             pygame.display.flip()
             audio_file = str(audio_path / "STOP.mp3")
@@ -198,7 +230,8 @@ def main():
     
     # -- update progress file
     if progress_file:
-        update_progress(progress_file, 100, "Complete")
+        lsl_status = " (LSL mode)" if use_lsl and lsl_initialized else ""
+        update_progress(progress_file, 100, f"Complete{lsl_status}")
     
     # -- clear screen
     screen.fill((0, 0, 0))

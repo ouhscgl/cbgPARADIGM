@@ -27,13 +27,22 @@ class ControlPanel:
         main_frame = ttk.Frame(root, padding="10")
         main_frame.pack(fill="both", expand=True)
         
-        # Subject ID frame
-        subject_frame = ttk.LabelFrame(main_frame, text="Subject Information", padding="10")
-        subject_frame.pack(fill="x", padx=5, pady=5)
+        # Recording Information frame
+        recording_frame = ttk.LabelFrame(main_frame, text="Recording Information", padding="10")
+        recording_frame.pack(fill="x", padx=5, pady=5)
         
-        ttk.Label(subject_frame, text="Subject ID:").pack(anchor="w")
-        self.subject_id = ttk.Entry(subject_frame)
+        ttk.Label(recording_frame, text="Subject ID:").pack(anchor="w")
+        self.subject_id = ttk.Entry(recording_frame)
         self.subject_id.pack(fill="x", pady=5)
+        
+        # LSL checkbox (default: on)
+        self.use_lsl_var = tk.BooleanVar(value=True)
+        self.lsl_checkbox = ttk.Checkbutton(
+            recording_frame,
+            text="Use LSL triggers",
+            variable=self.use_lsl_var
+        )
+        self.lsl_checkbox.pack(anchor="w", pady=2)
         
         # Controls frame
         button_frame = ttk.LabelFrame(main_frame, text="Experiment Selection", padding="10")
@@ -113,7 +122,7 @@ class ControlPanel:
         
         # Setup periodic progress check
         self.check_progress()
-    
+
     def validate_subject_id(self):
         subject = self.subject_id.get().strip()
         if not subject:
@@ -181,24 +190,27 @@ class ControlPanel:
             # Update debug label
             self.debug_label.config(text=f"Temp file created: {os.path.basename(temp_path)}")
             
-            # Start the process with the temp file path
+            # Prepare command line arguments
             if profile == "fingertapping":
-                # Old style for fingertapping
-                self.process = subprocess.Popen(
-                    [sys.executable, script_name, subject, temp_path],
-                    stderr=subprocess.PIPE,
-                    stdout=subprocess.PIPE
-                )
+                # Old style for fingertapping with LSL flag
+                cmd_args = [sys.executable, script_name, subject, temp_path]
+                if self.use_lsl_var.get():
+                    cmd_args.append("--use_lsl")
             else:
-                # New style for unified script with profile argument
-                self.process = subprocess.Popen(
-                    [sys.executable, script_name, 
-                     "--subject_id", subject, 
-                     "--progress_file", temp_path,
-                     "--profile", profile],
-                    stderr=subprocess.PIPE,
-                    stdout=subprocess.PIPE
-                )
+                # New style for unified script with profile argument and LSL flag
+                cmd_args = [sys.executable, script_name, 
+                           "--subject_id", subject, 
+                           "--progress_file", temp_path,
+                           "--profile", profile]
+                if self.use_lsl_var.get():
+                    cmd_args.append("--use_lsl")
+            
+            # Start the process
+            self.process = subprocess.Popen(
+                cmd_args,
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE
+            )
             
             # Update debug label
             self.debug_label.config(text=f"Process started with PID: {self.process.pid}")
