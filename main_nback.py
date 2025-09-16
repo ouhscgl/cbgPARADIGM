@@ -9,6 +9,7 @@ import win32gui
 import random
 import re
 import argparse
+import time
 from pathlib import Path
 
 # Import shared utility functions
@@ -430,11 +431,13 @@ def main():
     # Initialize LSL if requested
     lsl_initialized = False
     if args.use_lsl:
+        # Small delay to ensure control panel stream is destroyed
+        time.sleep(1)
         lsl_initialized = create_lsl_outlet()
         if lsl_initialized:
-            print("LSL outlet created successfully")
+            print("N-back: LSL stream created successfully")
         else:
-            print("Warning: Failed to create LSL outlet, falling back to keystrokes")
+            print("Warning: Failed to create LSL stream, falling back to keystrokes")
     
     # Initialize pygame and other resources
     screen, clock, font = init_game()

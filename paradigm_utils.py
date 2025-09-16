@@ -14,28 +14,31 @@ import win32con
 from win32api import keybd_event
 import pyautogui
 
+# Global LSL outlet variable
+_lsl_outlet = None
+
 def create_lsl_outlet():
-    """Create LSL outlet for sending triggers (paradigm script instance)"""
+    """Create LSL outlet for sending triggers"""
     global _lsl_outlet
     try:
         import pylsl
-        print("Paradigm: Connecting to LSL trigger stream...")
+        print("Creating LSL trigger stream...")
         info = pylsl.StreamInfo(
             name='TriggerStream',
             type='Markers',
             channel_count=1,
             nominal_srate=0,
             channel_format='int32',
-            source_id='paradigm_sender'  # Different source_id to avoid conflicts
+            source_id='paradigm_triggers'  # Same source_id as control panel
         )
         _lsl_outlet = pylsl.StreamOutlet(info)
-        print("Paradigm: Connected to LSL stream")
+        print("LSL stream created successfully")
         return True
     except ImportError:
         print("Warning: pylsl not available - LSL triggers disabled")
         return False
     except Exception as e:
-        print(f"Error connecting to LSL stream: {e}")
+        print(f"Error creating LSL outlet: {e}")
         return False
 
 def send_lsl_trigger(trigger_value):

@@ -61,11 +61,13 @@ def main():
     # Initialize LSL if requested
     lsl_initialized = False
     if use_lsl:
+        # Small delay to ensure control panel stream is destroyed
+        time.sleep(1)
         lsl_initialized = create_lsl_outlet()
         if lsl_initialized:
-            print("LSL outlet created successfully")
+            print("Fingertapping: LSL stream created successfully")
         else:
-            print("Warning: Failed to create LSL outlet, falling back to keystrokes")
+            print("Warning: Failed to create LSL stream, falling back to keystrokes")
     
     # -- initialize pygame
     pygame.mixer.init()

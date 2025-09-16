@@ -156,6 +156,7 @@ class ControlPanel:
             )
             self.lsl_outlet = pylsl.StreamOutlet(info)
             self.lsl_status_label.config(text="LSL: Stream ready for Aurora connection")
+            print("Control Panel: LSL stream created successfully - Aurora can now connect")
             
             # Send initial test trigger
             self.lsl_outlet.push_sample([999])
@@ -274,6 +275,14 @@ class ControlPanel:
                 stdout=subprocess.PIPE
             )
             
+            # If using LSL, temporarily destroy control panel stream 
+            # so paradigm can create one with same source_id
+            if self.use_lsl_var.get() and self.lsl_outlet:
+                print("Control Panel: Temporarily destroying LSL stream for experiment")
+                del self.lsl_outlet
+                self.lsl_outlet = None
+                self.lsl_status_label.config(text="LSL: Transferred to experiment")
+            
             # Update debug label
             self.debug_label.config(text=f"Process started with PID: {self.process.pid}")
             
@@ -312,6 +321,11 @@ class ControlPanel:
                     self.start_button.state(['!disabled'])
                     self.experiment_dropdown.state(['!disabled'])
                     self.experiment_complete = True
+                    
+                    # Recreate LSL stream if it was enabled
+                    if self.use_lsl_var.get() and not self.lsl_outlet:
+                        print("Control Panel: Recreating LSL stream after experiment")
+                        self.create_lsl_stream()
             else:
                 # Process still running, check progress
                 try:
