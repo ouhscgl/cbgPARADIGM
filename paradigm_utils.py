@@ -170,7 +170,7 @@ def send_keystroke(pygame_window_name=None, use_lsl=False):
     # -- old EEG input (use LSL if enabled, otherwise keystrokes)
     try:
         oEEG = "EmotivPRO"
-        if use_lsl:
+        if False:#use_lsl:
             # Send LSL trigger instead of keystroke for old EEG
             if send_lsl_trigger(8):  # Use trigger value 8 for old EEG
                 success = True
