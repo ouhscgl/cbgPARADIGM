@@ -203,7 +203,7 @@ class ControlPanel:
             subject_frame,
             text="Export",
             command=self.export_data,
-            width=5
+            width=6
         )
         self.export_button.pack(side="right")
         
@@ -329,13 +329,17 @@ class ControlPanel:
             self.root.update()  # Force GUI update
             
             # Run the export script in a separate process
+            cmd_args = [sys.executable, export_script, "--config", config_path]
             process = subprocess.Popen(
-                [sys.executable, export_script, "--config", config_path],
+                cmd_args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                env=os.environ.copy()
             )
+            print(f'{cmd_args}')
+            print(f'{sys.argv}')
             
             # Send the subject ID to the script's input prompt
             stdout, stderr = process.communicate(input=f"{subject}\n")

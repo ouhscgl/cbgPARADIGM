@@ -305,7 +305,7 @@ if __name__ == "__main__":
     parser.add_argument('--config', required=True, help='Path to configuration JSON file')
     parser.add_argument('--overwrite', action='store_true', 
                        help='Overwrite existing files in destination')
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
     
     try:
         user_input = input('Enter subject ID (e.g.: UTC001_V1): ')
