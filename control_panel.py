@@ -17,8 +17,13 @@ class ExportResultsWindow:
     def __init__(self, parent, results_data):
         self.results = results_data
         
-        # Write detailed errors to log file
-        self.write_error_log()
+        # Only write detailed errors to log file if there are actual issues
+        overall_success = results_data.get('overall_success', False)
+        has_actual_errors = any(info.get('status') == 'error' 
+                               for info in results_data.get('files', {}).values())
+        
+        if not overall_success or has_actual_errors:
+            self.write_error_log()
         
         # Create the popup window - much smaller
         self.window = tk.Toplevel(parent)
@@ -60,26 +65,29 @@ class ExportResultsWindow:
         nir_fingertapping = files.get('nir_fingertapping', {})
         
         # Show NIR nback if it exists and has a meaningful status
-        if nir_nback and nir_nback.get('status') != 'not_found':
+        if nir_nback and nir_nback.get('status') not in ['not_found']:
             self.create_result_row(parent, "fNIRS - nback recording", nir_nback.get('status', 'unknown'))
         
         # Show NIR fingertapping if it exists and has a meaningful status  
-        if nir_fingertapping and nir_fingertapping.get('status') != 'not_found':
+        if nir_fingertapping and nir_fingertapping.get('status') not in ['not_found']:
             self.create_result_row(parent, "fNIRS - fingertapping recording", nir_fingertapping.get('status', 'unknown'))
         
         # Handle EEG data
         eeg_info = files.get('eeg_data', {})
-        if eeg_info and eeg_info.get('status') != 'not_found':
+        if eeg_info and eeg_info.get('status') not in ['not_found']:
             self.create_result_row(parent, "EEG - recording", eeg_info.get('status', 'unknown'))
         
         # Handle EEG markers
         markers_info = files.get('eeg_markers', {})
-        if markers_info and markers_info.get('status') != 'not_found':
+        if markers_info and markers_info.get('status') not in ['not_found']:
             self.create_result_row(parent, "EEG - markers", markers_info.get('status', 'unknown'))
         
-        # Show debug info if there are issues
+        # Show debug info only if there are actual issues (not just "not found" items)
         overall_success = self.results.get('overall_success', False)
-        if not overall_success:
+        has_actual_errors = any(info.get('status') == 'error' 
+                               for info in files.values())
+        
+        if not overall_success or has_actual_errors:
             debug_frame = ttk.Frame(parent)
             debug_frame.pack(fill="x", pady=(10, 0))
             
@@ -96,13 +104,10 @@ class ExportResultsWindow:
         row_frame = ttk.Frame(parent)
         row_frame.pack(fill="x", pady=2)
         
-        # Status icon
-        if status == 'success':
+        # Status icon and color
+        if status in ['success', 'exists']:
             icon = "✓"
-            color = "green"
-        elif status == 'exists':
-            icon = "✓"
-            color = "orange"  # Already existed, but still "successful"
+            color = "green" if status == 'success' else "orange"
         else:
             icon = "✗"
             color = "red"
