@@ -6,152 +6,137 @@ import os
 import json
 import tempfile
 import re
+import datetime
 
 class ExportResultsWindow:
     def __init__(self, parent, results_data):
         self.results = results_data
         
-        # Create the popup window
+        # Write detailed errors to log file
+        self.write_error_log()
+        
+        # Create the popup window - much smaller
         self.window = tk.Toplevel(parent)
         self.window.title("Export Results")
-        self.window.geometry("500x400")
+        self.window.geometry("320x200")
         self.window.resizable(False, False)
         
         # Center the window
         self.window.transient(parent)
         self.window.grab_set()
         
-        # Main frame
-        main_frame = ttk.Frame(self.window, padding="20")
+        # Main frame with padding
+        main_frame = ttk.Frame(self.window, padding="15")
         main_frame.pack(fill="both", expand=True)
         
         # Title
+        subject_id = results_data.get('subject_id', 'Unknown')
         title_label = ttk.Label(main_frame, 
-                               text=f"Export Results for {results_data.get('subject_id', 'Unknown')}", 
-                               font=("Arial", 14, "bold"))
-        title_label.pack(pady=(0, 20))
+                               text=f"Export Results: {subject_id}", 
+                               font=("Arial", 12, "bold"))
+        title_label.pack(pady=(0, 15))
         
-        # Results frame with scrollbar
-        canvas = tk.Canvas(main_frame)
-        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # File results
-        files = results_data.get('files', {})
-        self.create_file_result_row(scrollable_frame, "NIR Data", files.get('nir_data', {}))
-        self.create_file_result_row(scrollable_frame, "EEG Data", files.get('eeg_data', {}))
-        self.create_file_result_row(scrollable_frame, "EEG Markers", files.get('eeg_markers', {}))
-        
-        canvas.pack(side="left", fill="both", expand=True, pady=(0, 20))
-        scrollbar.pack(side="right", fill="y", pady=(0, 20))
-        
-        # Overall status
-        overall_frame = ttk.Frame(main_frame)
-        overall_frame.pack(fill="x", pady=(10, 0))
-        
-        overall_success = results_data.get('overall_success', False)
-        overall_icon = "✓" if overall_success else "✗"
-        overall_color = "green" if overall_success else "red"
-        overall_text = "Export completed successfully!" if overall_success else "Export completed with issues"
-        
-        overall_label = ttk.Label(overall_frame, 
-                                 text=f"{overall_icon} {overall_text}", 
-                                 font=("Arial", 12, "bold"),
-                                 foreground=overall_color)
-        overall_label.pack()
+        # Results list
+        self.create_results_list(main_frame)
         
         # Close button
         close_button = ttk.Button(main_frame, text="Close", command=self.close_window)
-        close_button.pack(pady=(20, 0))
+        close_button.pack(pady=(15, 0))
         
         # Center the window on parent
         self.center_window()
     
-    def create_file_result_row(self, parent, file_type, file_info):
-        """Create a row showing the result for one file type"""
-        frame = ttk.LabelFrame(parent, text=file_type, padding="10")
-        frame.pack(fill="x", pady=5, padx=5)
+    def create_results_list(self, parent):
+        """Create a simple list of export results"""
+        files = self.results.get('files', {})
         
-        status = file_info.get('status', 'unknown')
-        message = file_info.get('message', 'No information')
-        source_path = file_info.get('source_path', '')
-        dest_path = file_info.get('dest_path', '')
+        # Map file types to display names
+        file_mappings = [
+            ('nir_data', lambda info: self.get_nir_display_name(info)),
+            ('eeg_data', lambda info: "EEG - recording"),
+            ('eeg_markers', lambda info: "EEG - markers")
+        ]
         
-        # Status icon and color
-        if status == 'success':
-            icon = "✓"
-            color = "green"
-            status_text = "Successfully exported"
-        elif status == 'not_found':
-            icon = "✗"
-            color = "red"
-            status_text = "Not found"
-        elif status == 'exists':
-            icon = "⚠"
-            color = "orange"
-            status_text = "Already exists"
-        elif status == 'error':
-            icon = "✗"
-            color = "red"
-            status_text = "Error occurred"
-        else:
-            icon = "?"
-            color = "gray"
-            status_text = "Unknown status"
-        
-        # Status row
-        status_frame = ttk.Frame(frame)
-        status_frame.pack(fill="x", pady=(0, 5))
-        
-        # FIX: Use ttk.Label instead of tk.Label to avoid background property issues
-        status_label = ttk.Label(status_frame, 
-                                text=f"{icon} {status_text}", 
-                                font=("Arial", 11, "bold"),
-                                foreground=color)
-        status_label.pack(anchor="w")
-        
-        # Message
-        if message:
-            message_label = ttk.Label(frame, text=message, font=("Arial", 9))
-            message_label.pack(anchor="w", pady=(0, 5))
-        
-        # Paths (if available)
-        if source_path:
-            source_label = ttk.Label(frame, 
-                                   text=f"From: {self.truncate_path(source_path)}", 
-                                   font=("Arial", 8),
-                                   foreground="gray")
-            source_label.pack(anchor="w")
-        
-        if dest_path:
-            dest_label = ttk.Label(frame, 
-                                 text=f"To: {self.truncate_path(dest_path)}", 
-                                 font=("Arial", 8),
-                                 foreground="gray")
-            dest_label.pack(anchor="w")
-            
-        # Show experiment type for NIR data if available
-        if file_type == "NIR Data" and 'experiment_type' in file_info:
-            exp_type = file_info['experiment_type']
-            exp_label = ttk.Label(frame, 
-                                text=f"Experiment type: {exp_type}", 
-                                font=("Arial", 8, "italic"),
-                                foreground="blue")
-            exp_label.pack(anchor="w")
+        for file_key, display_func in file_mappings:
+            if file_key in files:
+                file_info = files[file_key]
+                status = file_info.get('status', 'unknown')
+                display_name = display_func(file_info)
+                
+                # Create result row
+                row_frame = ttk.Frame(parent)
+                row_frame.pack(fill="x", pady=2)
+                
+                # Status icon
+                if status == 'success':
+                    icon = "✓"
+                    color = "green"
+                elif status == 'exists':
+                    icon = "✓"
+                    color = "orange"  # Already existed, but still "successful"
+                else:
+                    icon = "✗"
+                    color = "red"
+                
+                # Create the label
+                result_label = tk.Label(row_frame, 
+                                      text=f"{icon} {display_name}",
+                                      font=("Arial", 10),
+                                      foreground=color,
+                                      anchor="w")
+                result_label.pack(fill="x")
     
-    def truncate_path(self, path, max_length=60):
-        """Truncate long paths for display"""
-        if len(path) <= max_length:
-            return path
-        return "..." + path[-(max_length-3):]
+    def get_nir_display_name(self, nir_info):
+        """Generate display name for NIR data based on experiment type"""
+        experiment_type = nir_info.get('experiment_type', 'unknown')
+        
+        if experiment_type == 'FTP':
+            return "fNIRS - fingertapping recording"
+        elif experiment_type == 'NBK':
+            return "fNIRS - nback recording"
+        elif experiment_type == 'DAT':
+            return "fNIRS - recording"
+        else:
+            return "fNIRS - recording"
+    
+    def write_error_log(self):
+        """Write detailed error information to a log file"""
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        log_path = os.path.join(script_dir, 'export_log.txt')
+        
+        try:
+            with open(log_path, 'w', encoding='utf-8') as f:
+                f.write(f"Export Log - {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("=" * 50 + "\n\n")
+                
+                subject_id = self.results.get('subject_id', 'Unknown')
+                overall_success = self.results.get('overall_success', False)
+                
+                f.write(f"Subject ID: {subject_id}\n")
+                f.write(f"Overall Success: {overall_success}\n\n")
+                
+                files = self.results.get('files', {})
+                for file_type, file_info in files.items():
+                    f.write(f"--- {file_type.upper()} ---\n")
+                    f.write(f"Status: {file_info.get('status', 'unknown')}\n")
+                    f.write(f"Message: {file_info.get('message', 'No message')}\n")
+                    f.write(f"Source: {file_info.get('source_path', 'N/A')}\n")
+                    f.write(f"Destination: {file_info.get('dest_path', 'N/A')}\n")
+                    
+                    # Add experiment type for NIR data
+                    if file_type == 'nir_data' and 'experiment_type' in file_info:
+                        f.write(f"Experiment Type: {file_info['experiment_type']}\n")
+                    
+                    f.write("\n")
+                
+                # Only write this message if there were actual issues
+                has_issues = any(info.get('status') in ['error', 'not_found'] 
+                               for info in files.values())
+                if has_issues:
+                    f.write("Note: Detailed error information has been logged above.\n")
+                
+        except Exception as e:
+            print(f"Warning: Could not write error log: {e}")
     
     def center_window(self):
         """Center the window on the parent"""
@@ -338,8 +323,6 @@ class ControlPanel:
                 text=True,
                 env=os.environ.copy()
             )
-            print(f'{cmd_args}')
-            print(f'{sys.argv}')
             
             # Send the subject ID to the script's input prompt
             stdout, stderr = process.communicate(input=f"{subject}\n")
@@ -348,33 +331,70 @@ class ControlPanel:
             export_results = self.parse_export_results(stdout)
             
             if export_results:
-                # Show the detailed results window
+                # Show the simplified results window
                 ExportResultsWindow(self.root, export_results)
-                self.debug_label.config(text="Export completed - see results window")
+                self.debug_label.config(text="Export completed - check results window")
             else:
-                # Fallback to simple message if JSON parsing failed
+                # Fallback if JSON parsing failed
                 if process.returncode == 0:
-                    messagebox.showinfo("Export Complete", 
-                                      f"Data export completed for {subject}\n\nCheck console output for details.")
+                    # Create a basic results structure for the window
+                    basic_results = {
+                        'subject_id': subject,
+                        'overall_success': True,
+                        'files': {
+                            'nir_data': {'status': 'success', 'message': 'Export completed'},
+                            'eeg_data': {'status': 'success', 'message': 'Export completed'},
+                            'eeg_markers': {'status': 'success', 'message': 'Export completed'}
+                        }
+                    }
+                    ExportResultsWindow(self.root, basic_results)
                     self.debug_label.config(text="Export completed successfully")
                 else:
-                    error_msg = f"Export failed with return code {process.returncode}"
-                    if stderr.strip():
-                        error_msg += f"\n\nError details:\n{stderr[:500]}..."  # Truncate long errors
-                    messagebox.showerror("Export Error", error_msg)
+                    # Create error results structure
+                    error_results = {
+                        'subject_id': subject,
+                        'overall_success': False,
+                        'files': {
+                            'nir_data': {'status': 'error', 'message': f'Export failed (code {process.returncode})'},
+                            'eeg_data': {'status': 'error', 'message': f'Export failed (code {process.returncode})'},
+                            'eeg_markers': {'status': 'error', 'message': f'Export failed (code {process.returncode})'}
+                        }
+                    }
+                    ExportResultsWindow(self.root, error_results)
                     self.debug_label.config(text="Export failed")
-                
-            # Show console output for debugging
+                    
+                    # Also write stderr to log file for debugging
+                    if stderr.strip():
+                        log_path = os.path.join(script_dir, 'export_log.txt')
+                        try:
+                            with open(log_path, 'a', encoding='utf-8') as f:
+                                f.write("\n--- STDERR OUTPUT ---\n")
+                                f.write(stderr)
+                        except:
+                            pass
+                    
+            # Show console output for debugging (keep this for development)
             if stdout.strip():
                 print("Export stdout:")
                 print(stdout)
             if stderr.strip():
                 print("Export stderr:")
                 print(stderr)
-                
+                    
         except Exception as e:
             error_msg = f"Could not run export script: {str(e)}"
-            messagebox.showerror("Error", error_msg)
+            
+            # Create error results structure
+            error_results = {
+                'subject_id': subject,
+                'overall_success': False,
+                'files': {
+                    'nir_data': {'status': 'error', 'message': error_msg},
+                    'eeg_data': {'status': 'error', 'message': error_msg},
+                    'eeg_markers': {'status': 'error', 'message': error_msg}
+                }
+            }
+            ExportResultsWindow(self.root, error_results)
             self.debug_label.config(text="Export error")
     
     def parse_export_results(self, stdout):
