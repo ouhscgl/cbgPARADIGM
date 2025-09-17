@@ -111,11 +111,11 @@ class ExportResultsWindow:
         status_frame = ttk.Frame(frame)
         status_frame.pack(fill="x", pady=(0, 5))
         
-        status_label = tk.Label(status_frame, 
-                               text=f"{icon} {status_text}", 
-                               font=("Arial", 11, "bold"),
-                               foreground=color,
-                               background=frame.cget('background'))
+        # FIX: Use ttk.Label instead of tk.Label to avoid background property issues
+        status_label = ttk.Label(status_frame, 
+                                text=f"{icon} {status_text}", 
+                                font=("Arial", 11, "bold"),
+                                foreground=color)
         status_label.pack(anchor="w")
         
         # Message
