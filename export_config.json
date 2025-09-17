@@ -1,0 +1,7 @@
+{
+    "destination_base": "C:\\Projects\\{subject_prefix}",
+    "search_paths": {
+        "nir": "C:\\NIRx\\Data",
+        "eeg": "C:\\Emotiv_data"
+    }
+}
