@@ -49,8 +49,14 @@ EXPERIMENT_PROFILES = {
         "rest_states": ["closed", "open"],
         "appendix"   : "_NIR_EEG_COG"
     },
-    "PeterProtocol": {
+    "PeterProtocol1": {
         "stim_type": "letter_stimulus.csv",
+        "rest_period": 300000,
+        "rest_states": ["closed", "open"],
+        "appendix"   : "_NIR_EEG_COG"
+    },
+    "PeterProtocol2": {
+        "stim_type": "number_stimulus.csv",
         "rest_period": 300000,
         "rest_states": ["closed", "open"],
         "appendix"   : "_NIR_EEG_COG"

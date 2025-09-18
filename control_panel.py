@@ -253,7 +253,8 @@ class ControlPanel:
             "Nback (letters) NRA" : "NRA_letter",
             "Nback (numbers) NRA" : "NRA_number",
             "Nback (SCog with extended rest)" : "SCog_letter",
-            "Nback (PeterProtocol)":"PeterProtocol",
+            "Nback (letters) LTIA":"PeterProtocol1",
+            "Nback (numbers) LTIA":"PeterProtocol2",
             "Fingertapping"       : "fingertapping"
         }
         
