@@ -1,16 +1,10 @@
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox
 import subprocess
 import sys
 import os
 import json
 import tempfile
-import re
-import datetime
-
-import tkinter as tk
-from tkinter import ttk
-import os
 import datetime
 
 class ExportResultsWindow:
@@ -128,7 +122,7 @@ class ExportResultsWindow:
         
         try:
             with open(log_path, 'a', encoding='utf-8') as f:  # Append to existing log
-                f.write(f"\n--- EXPORT RESULTS WINDOW LOG ---\n")
+                f.write("\n--- EXPORT RESULTS WINDOW LOG ---\n")
                 f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 
                 subject_id = self.results.get('subject_id', 'Unknown')
@@ -249,13 +243,13 @@ class ControlPanel:
         
         # List of available experiments
         self.experiments = {
-            "Nback (letters) TBI" : "TBI_letter",
-            "Nback (letters) NRA" : "NRA_letter",
-            "Nback (numbers) NRA" : "NRA_number",
-            "Nback (SCog with extended rest)" : "SCog_letter",
-            "Nback (letters) LTIA":"PeterProtocol1",
-            "Nback (numbers) LTIA":"PeterProtocol2",
-            "Fingertapping"       : "fingertapping"
+            "Nback (letters) TBI"  : "TBI_letter",
+            "Nback (letters) NRA"  : "NRA_letter",
+            "Nback (numbers) NRA"  : "NRA_number",
+            "Nback (numbers) SCog" : "SCog_letter",
+            "Nback (letters) LTIA" : "PeterProtocol1",
+            "Nback (numbers) LTIA" : "PeterProtocol2",
+            "Fingertapping"        : "fingertapping"
         }
         
         # Create dropdown menu
