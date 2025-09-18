@@ -253,7 +253,8 @@ class ControlPanel:
             "Nback (letters) NRA" : "NRA_letter",
             "Nback (numbers) NRA" : "NRA_number",
             "Nback (SCog with extended rest)" : "SCog_letter",
-            "Fingertapping" : "fingertapping"
+            "Nback (PeterProtocol)":"PeterProtocol",
+            "Fingertapping"       : "fingertapping"
         }
         
         # Create dropdown menu
