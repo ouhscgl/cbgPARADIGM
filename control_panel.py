@@ -25,20 +25,13 @@ class ExportResultsWindow:
         main_frame = ttk.Frame(self.window, padding="15")
         main_frame.pack(fill="both", expand=True)
         
-        # Title
-        subject_id = results_data.get('subject_id', 'Unknown')
-        title_label = ttk.Label(main_frame, 
-                               text=f"Export Results: {subject_id}", 
-                               font=("Arial", 12, "bold"))
-        title_label.pack(pady=(0, 15))
-        
         # Results list
         self.create_results_list(main_frame)
         
         # Log file info
         log_info = ttk.Label(main_frame, 
                             text="Details saved to export_log.txt",
-                            font=("Arial", 8),
+                            font=("Verdana", 8),justify='left',
                             foreground="gray")
         log_info.pack(pady=(10, 0))
         
@@ -64,10 +57,6 @@ class ExportResultsWindow:
         for file_type, info in files.items():
             status = info.get('status', 'unknown')
             
-            # Only show files that were found or had errors (skip 'not_found')
-            if status == 'not_found':
-                continue
-            
             display_name = display_names.get(file_type, file_type)
             self.create_result_row(parent, display_name, status)
     
@@ -87,13 +76,21 @@ class ExportResultsWindow:
             icon = "✗"
             color = "red"
         
-        # Create the label with bold text
-        result_label = tk.Label(row_frame, 
-                              text=f"{icon} {display_name}",
-                              font=("Arial", 10, "bold"),
-                              foreground=color,
-                              anchor="w")
-        result_label.pack(fill="x")
+        # Create icon label with status color
+        icon_label = tk.Label(row_frame, 
+                            text=icon,
+                            font=("Verdana", 10, "bold"),
+                            foreground=color,
+                            anchor="w")
+        icon_label.pack(side="left")
+        
+        # Create text label with black color
+        text_label = tk.Label(row_frame, 
+                            text=f" {display_name}",
+                            font=("Verdana", 10, "bold"),
+                            foreground="black",
+                            anchor="w")
+        text_label.pack(side="left", fill="x", expand=True)
     
     def center_window(self):
         """Center the window on the parent"""
