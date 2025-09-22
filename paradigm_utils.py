@@ -224,27 +224,6 @@ def check_for_quit():
 def display_message(screen, font, message, wait=0, custom_font_size=None, progress_file=None, 
                    status=None, progress_start=None, progress_end=None, image_path=None, 
                    position=None, width_screen=1920, height_screen=1080):
-    """
-    Display message with optional progress updates during wait period and optional image
-    
-    Parameters:
-    - screen: pygame screen object
-    - font: pygame font object
-    - message: string or list of strings to display
-    - wait: milliseconds to wait (0 for no wait)
-    - custom_font_size: optional custom font size
-    - progress_file: path to progress file
-    - status: status message for progress updates
-    - progress_start: starting progress percentage
-    - progress_end: ending progress percentage
-    - image_path: path to optional image to display
-    - position: custom position tuple (x, y) - defaults to center
-    - width_screen: screen width
-    - height_screen: screen height
-    
-    Returns:
-        bool: True if user quit during display, False otherwise
-    """
     bg_color = (0, 0, 0)
     font_color = (255, 255, 255)
     

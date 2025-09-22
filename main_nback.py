@@ -206,6 +206,11 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
     
     # Get the appropriate instructions based on the stimulus type
     instructions = get_instructions(profile["stim_type"])
+    image_path_appendix = ''
+    if "number" in profile["stim_type"].lower():
+        image_path_appendix = 'num'
+    else:
+        image_path_appendix = 'let'
     
     # Get the instruction images path (located in _resources/images)
     resource_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
@@ -236,10 +241,10 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
         # Look for a task-specific image for this trial
         image_path = None
         possible_image_paths = [
-            images_path / f"{i.lower()}.png",
-            images_path / f"{i.lower()}.jpg",
-            images_path / f"task_{enum+1}.png",
-            images_path / f"task_{enum+1}.jpg"
+            images_path / f"{i.lower()}_{image_path_appendix}.png",
+            images_path / f"{i.lower()}_{image_path_appendix}.jpg",
+            images_path / f"task_{enum+1}_{image_path_appendix}.png",
+            images_path / f"task_{enum+1}_{image_path_appendix}.jpg"
         ]
         
         for path in possible_image_paths:
