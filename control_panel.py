@@ -11,18 +11,10 @@ class ExportResultsWindow:
     def __init__(self, parent, results_data):
         self.results = results_data
         
-        # Only write detailed errors to log file if there are actual issues
-        overall_success = results_data.get('overall_success', False)
-        has_actual_errors = any(info.get('status') == 'error' 
-                               for info in results_data.get('files', {}).values())
-        
-        if not overall_success or has_actual_errors:
-            self.write_error_log()
-        
-        # Create the popup window - much smaller
+        # Create the popup window - compact size
         self.window = tk.Toplevel(parent)
         self.window.title("Export Results")
-        self.window.geometry("320x200")
+        self.window.geometry("350x220")
         self.window.resizable(False, False)
         
         # Center the window
@@ -43,115 +35,65 @@ class ExportResultsWindow:
         # Results list
         self.create_results_list(main_frame)
         
+        # Log file info
+        log_info = ttk.Label(main_frame, 
+                            text="Details saved to export_log.txt",
+                            font=("Arial", 8),
+                            foreground="gray")
+        log_info.pack(pady=(10, 0))
+        
         # Close button
         close_button = ttk.Button(main_frame, text="Close", command=self.close_window)
-        close_button.pack(pady=(15, 0))
+        close_button.pack(pady=(10, 0))
         
         # Center the window on parent
         self.center_window()
     
     def create_results_list(self, parent):
-        """Create a simple list of export results"""
+        """Create a simple list of export results with icons"""
         files = self.results.get('files', {})
         
-        # Handle NIR data - now we have separate entries for each experiment type
-        nir_nback = files.get('nir_nback', {})
-        nir_fingertapping = files.get('nir_fingertapping', {})
+        # Display names for each file type
+        display_names = {
+            'fnirs_nback': 'fNIRS - N-back',
+            'fnirs_fingertapping': 'fNIRS - Fingertapping', 
+            'eeg_data': 'EEG - Recording',
+            'eeg_markers': 'EEG - Markers'
+        }
         
-        # Show NIR nback if it exists and has a meaningful status
-        if nir_nback and nir_nback.get('status') not in ['not_found']:
-            self.create_result_row(parent, "fNIRS - nback recording", nir_nback.get('status', 'unknown'))
-        
-        # Show NIR fingertapping if it exists and has a meaningful status  
-        if nir_fingertapping and nir_fingertapping.get('status') not in ['not_found']:
-            self.create_result_row(parent, "fNIRS - fingertapping recording", nir_fingertapping.get('status', 'unknown'))
-        
-        # Handle EEG data
-        eeg_info = files.get('eeg_data', {})
-        if eeg_info and eeg_info.get('status') not in ['not_found']:
-            self.create_result_row(parent, "EEG - recording", eeg_info.get('status', 'unknown'))
-        
-        # Handle EEG markers
-        markers_info = files.get('eeg_markers', {})
-        if markers_info and markers_info.get('status') not in ['not_found']:
-            self.create_result_row(parent, "EEG - markers", markers_info.get('status', 'unknown'))
-        
-        # Show debug info only if there are actual issues (not just "not found" items)
-        overall_success = self.results.get('overall_success', False)
-        has_actual_errors = any(info.get('status') == 'error' 
-                               for info in files.values())
-        
-        if not overall_success or has_actual_errors:
-            debug_frame = ttk.Frame(parent)
-            debug_frame.pack(fill="x", pady=(10, 0))
+        for file_type, info in files.items():
+            status = info.get('status', 'unknown')
             
-            debug_label = tk.Label(debug_frame, 
-                                 text="⚠ See export_log.txt for details",
-                                 font=("Arial", 8),
-                                 foreground="gray",
-                                 anchor="w")
-            debug_label.pack(fill="x")
+            # Only show files that were found or had errors (skip 'not_found')
+            if status == 'not_found':
+                continue
+            
+            display_name = display_names.get(file_type, file_type)
+            self.create_result_row(parent, display_name, status)
     
     def create_result_row(self, parent, display_name, status):
-        """Create a single result row"""
-        # Create result row
+        """Create a single result row with appropriate icon and styling"""
         row_frame = ttk.Frame(parent)
-        row_frame.pack(fill="x", pady=2)
+        row_frame.pack(fill="x", pady=3)
         
-        # Status icon and color
-        if status in ['success', 'exists']:
+        # Determine icon and color based on status
+        if status == 'success':
             icon = "✓"
-            color = "green" if status == 'success' else "orange"
-        else:
+            color = "green"
+        elif status == 'exists':
+            icon = "⚠"
+            color = "orange"
+        else:  # error
             icon = "✗"
             color = "red"
         
-        # Create the label
+        # Create the label with bold text
         result_label = tk.Label(row_frame, 
                               text=f"{icon} {display_name}",
-                              font=("Arial", 10),
+                              font=("Arial", 10, "bold"),
                               foreground=color,
                               anchor="w")
         result_label.pack(fill="x")
-
-    
-    def write_error_log(self):
-        """Write detailed error information to a log file"""
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        log_path = os.path.join(script_dir, 'export_log.txt')
-        
-        try:
-            with open(log_path, 'a', encoding='utf-8') as f:  # Append to existing log
-                f.write("\n--- EXPORT RESULTS WINDOW LOG ---\n")
-                f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                
-                subject_id = self.results.get('subject_id', 'Unknown')
-                overall_success = self.results.get('overall_success', False)
-                
-                f.write(f"Subject ID: {subject_id}\n")
-                f.write(f"Overall Success: {overall_success}\n\n")
-                
-                f.write("Raw Results Data:\n")
-                f.write(f"{self.results}\n\n")
-                
-                files = self.results.get('files', {})
-                f.write(f"Found {len(files)} file categories\n")
-                
-                for file_type, file_info in files.items():
-                    f.write(f"--- {file_type.upper()} ---\n")
-                    f.write(f"Status: {file_info.get('status', 'unknown')}\n")
-                    f.write(f"Message: {file_info.get('message', 'No message')}\n")
-                    f.write(f"Source: {file_info.get('source_path', 'N/A')}\n")
-                    f.write(f"Destination: {file_info.get('dest_path', 'N/A')}\n")
-                    
-                    # Add experiment type for NIR data
-                    if file_type == 'nir_data' and 'experiment_type' in file_info:
-                        f.write(f"Experiment Type: {file_info['experiment_type']}\n")
-                    
-                    f.write("\n")
-                
-        except Exception as e:
-            print(f"Warning: Could not write error log: {e}")
     
     def center_window(self):
         """Center the window on the parent"""
@@ -311,7 +253,7 @@ class ControlPanel:
         self.check_progress()
     
     def export_data(self):
-        """Handle the export data button click"""
+        """Handle the export data button click - simplified version"""
         subject = self.validate_subject_id()
         if not subject:
             return
@@ -344,80 +286,33 @@ class ControlPanel:
             # Send the subject ID to the script's input prompt
             stdout, stderr = process.communicate(input=f"{subject}\n")
             
-            # Always write detailed debug info to log file first
-            log_path = os.path.join(script_dir, 'export_log.txt')
-            try:
-                with open(log_path, 'w', encoding='utf-8') as f:
-                    f.write(f"Export Debug Log - {subject}\n")
-                    f.write("=" * 50 + "\n\n")
-                    f.write(f"Return Code: {process.returncode}\n\n")
-                    f.write("--- STDOUT ---\n")
-                    f.write(stdout)
-                    f.write("\n--- STDERR ---\n")
-                    f.write(stderr)
-                    f.write("\n" + "=" * 50 + "\n")
-            except:
-                pass
-            
             # Parse the JSON results from stdout
             export_results = self.parse_export_results(stdout)
             
-            # Check if script failed regardless of JSON parsing
-            script_failed = process.returncode != 0
-            
-            if export_results and not script_failed:
-                # Script succeeded and we have valid JSON results
+            if export_results:
+                # Show results window with simplified data
                 ExportResultsWindow(self.root, export_results)
                 self.debug_label.config(text="Export completed - check results window")
-            elif export_results and script_failed:
-                # Script failed but we have JSON results - mark everything as failed
-                export_results['overall_success'] = False
-                for file_type in export_results.get('files', {}):
-                    if export_results['files'][file_type].get('status') not in ['error']:
-                        export_results['files'][file_type]['status'] = 'error'
-                        export_results['files'][file_type]['message'] = f"Script failed (code {process.returncode})"
-                
-                ExportResultsWindow(self.root, export_results)
-                self.debug_label.config(text=f"Export failed (code {process.returncode}) - check log file")
             else:
-                # No valid JSON results or script failed
+                # Create basic error result if no JSON found
                 if process.returncode == 0:
-                    # Shouldn't happen, but handle it
-                    basic_results = {
-                        'subject_id': subject,
-                        'overall_success': True,
-                        'files': {
-                            'nir_data': {'status': 'success', 'message': 'Export completed'},
-                            'eeg_data': {'status': 'success', 'message': 'Export completed'},
-                            'eeg_markers': {'status': 'success', 'message': 'Export completed'}
-                        }
-                    }
-                    ExportResultsWindow(self.root, basic_results)
+                    # Shouldn't happen, but handle gracefully
                     self.debug_label.config(text="Export completed successfully")
+                    messagebox.showinfo("Export Complete", f"Data exported for {subject}")
                 else:
-                    # Create error results structure
+                    # Show error message
                     error_results = {
                         'subject_id': subject,
-                        'overall_success': False,
                         'files': {
-                            'nir_nback': {'status': 'error', 'message': f'Export failed (code {process.returncode})', 'experiment_type': 'NBK'},
-                            'nir_fingertapping': {'status': 'error', 'message': f'Export failed (code {process.returncode})', 'experiment_type': 'FTP'},
-                            'eeg_data': {'status': 'error', 'message': f'Export failed (code {process.returncode})'},
-                            'eeg_markers': {'status': 'error', 'message': f'Export failed (code {process.returncode})'}
+                            'fnirs_nback': {'status': 'error', 'message': f'Export failed (code {process.returncode})', 'path': ''},
+                            'fnirs_fingertapping': {'status': 'error', 'message': f'Export failed (code {process.returncode})', 'path': ''},
+                            'eeg_data': {'status': 'error', 'message': f'Export failed (code {process.returncode})', 'path': ''},
+                            'eeg_markers': {'status': 'error', 'message': f'Export failed (code {process.returncode})', 'path': ''}
                         }
                     }
                     ExportResultsWindow(self.root, error_results)
-                    self.debug_label.config(text=f"Export failed (code {process.returncode}) - check log file")
-                    
-            # Show console output for debugging (keep this for development)
-            print(f"Export return code: {process.returncode}")
-            if stdout.strip():
-                print("Export stdout:")
-                print(stdout[:500] + "..." if len(stdout) > 500 else stdout)
-            if stderr.strip():
-                print("Export stderr:")
-                print(stderr)
-                    
+                    self.debug_label.config(text="Export failed - check export_log.txt")
+                        
         except Exception as e:
             error_msg = f"Could not run export script: {str(e)}"
             print(f"Export exception: {error_msg}")
@@ -425,19 +320,18 @@ class ControlPanel:
             # Create error results structure
             error_results = {
                 'subject_id': subject,
-                'overall_success': False,
                 'files': {
-                    'nir_nback': {'status': 'error', 'message': error_msg, 'experiment_type': 'NBK'},
-                    'nir_fingertapping': {'status': 'error', 'message': error_msg, 'experiment_type': 'FTP'},
-                    'eeg_data': {'status': 'error', 'message': error_msg},
-                    'eeg_markers': {'status': 'error', 'message': error_msg}
+                    'fnirs_nback': {'status': 'error', 'message': error_msg, 'path': ''},
+                    'fnirs_fingertapping': {'status': 'error', 'message': error_msg, 'path': ''},
+                    'eeg_data': {'status': 'error', 'message': error_msg, 'path': ''},
+                    'eeg_markers': {'status': 'error', 'message': error_msg, 'path': ''}
                 }
             }
             ExportResultsWindow(self.root, error_results)
-            self.debug_label.config(text="Export error - check log file")
-    
+            self.debug_label.config(text="Export error - check export_log.txt")
+
     def parse_export_results(self, stdout):
-        """Parse the JSON results from the export script output"""
+        """Parse the JSON results from the export script output - simplified version"""
         try:
             # Look for the JSON results section
             start_marker = "=== EXPORT_RESULTS_JSON ==="
