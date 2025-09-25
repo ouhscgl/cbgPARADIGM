@@ -5,7 +5,6 @@ import sys
 import os
 import json
 import tempfile
-import datetime
 
 class ExportResultsWindow:
     def __init__(self, parent, results_data):
@@ -14,7 +13,9 @@ class ExportResultsWindow:
         # Create the popup window - compact size
         self.window = tk.Toplevel(parent)
         self.window.title("Export Results")
-        self.window.geometry("350x220")
+        geom_x = self.window.master.winfo_width() - 33
+        self.window.geometry(f"{geom_x}x100")
+        print()
         self.window.resizable(False, False)
         
         # Center the window
@@ -22,23 +23,11 @@ class ExportResultsWindow:
         self.window.grab_set()
         
         # Main frame with padding
-        main_frame = ttk.Frame(self.window, padding="15")
+        main_frame = ttk.Frame(self.window, padding="5")
         main_frame.pack(fill="both", expand=True)
         
         # Results list
-        self.create_results_list(main_frame)
-        
-        # Log file info
-        log_info = ttk.Label(main_frame, 
-                            text="Details saved to export_log.txt",
-                            font=("Verdana", 8),justify='left',
-                            foreground="gray")
-        log_info.pack(pady=(10, 0))
-        
-        # Close button
-        close_button = ttk.Button(main_frame, text="Close", command=self.close_window)
-        close_button.pack(pady=(10, 0))
-        
+        self.create_results_list(main_frame)                
         # Center the window on parent
         self.center_window()
     
@@ -63,17 +52,17 @@ class ExportResultsWindow:
     def create_result_row(self, parent, display_name, status):
         """Create a single result row with appropriate icon and styling"""
         row_frame = ttk.Frame(parent)
-        row_frame.pack(fill="x", pady=3)
+        row_frame.pack(fill="x", pady=1)
         
         # Determine icon and color based on status
         if status == 'success':
-            icon = "✓"
+            icon = " ✓ "
             color = "green"
         elif status == 'exists':
             icon = "⚠"
             color = "orange"
         else:  # error
-            icon = "✗"
+            icon = " ✗ "
             color = "red"
         
         # Create icon label with status color
@@ -87,17 +76,20 @@ class ExportResultsWindow:
         # Create text label with black color
         text_label = tk.Label(row_frame, 
                             text=f" {display_name}",
-                            font=("Verdana", 10, "bold"),
+                            font=("Verdana", 8, "bold"),
                             foreground="black",
                             anchor="w")
         text_label.pack(side="left", fill="x", expand=True)
     
-    def center_window(self):
-        """Center the window on the parent"""
+    def center_window(self, x_offset = 17, y_offset = 62):
         self.window.update_idletasks()
-        x = (self.window.winfo_screenwidth() // 2) - (self.window.winfo_width() // 2)
-        y = (self.window.winfo_screenheight() // 2) - (self.window.winfo_height() // 2)
-        self.window.geometry(f"+{x}+{y}")
+        parent = self.window.master
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        
+        new_x = parent_x + x_offset
+        new_y = parent_y + y_offset
+        self.window.geometry(f"+{new_x}+{new_y}")
     
     def close_window(self):
         self.window.destroy()
