@@ -2,11 +2,9 @@
 # -*- coding: utf-8 -*-
 import pygame
 import sys
-import json
 from pathlib import Path
 import time
 import os
-import pyautogui
 
 # Import shared utility functions
 from paradigm_utils import (
@@ -25,29 +23,15 @@ REPETITIONS   = 3
 # -- screen settings
 SCREEN_WIDTH  = 1920
 SCREEN_HEIGHT = 1080
-
+# -- messages
 MSG_INTRO = ['SMALL MOTOR EXERCISE','','PLEASE GET COMFORTABLE BEFORE WE', 
              'PERFORM BASELINE MEASUREMENTS']
 
 def parse_arguments():
-    """Parse command line arguments supporting both old and new styles"""
     # Default values
-    subject_id = "UNKNOWN"
-    progress_file = None
-    use_lsl = False
-    
-    # Handle arguments
-    if len(sys.argv) >= 2:
-        subject_id = sys.argv[1]
-    
-    if len(sys.argv) >= 3:
-        progress_file = sys.argv[2]
-    
-    # Check for LSL flag
-    if "--use_lsl" in sys.argv:
-        use_lsl = True
-        print("LSL mode enabled for old NIRS device")
-    
+    subject_id    = sys.argv[1] if len(sys.argv) >= 2 else "UNKNOWN"
+    progress_file = sys.argv[2] if len(sys.argv) >= 3 else None
+    use_lsl       = "--use_lsl" in sys.argv
     return subject_id, progress_file, use_lsl
 
 def main():
@@ -58,16 +42,14 @@ def main():
     print(f"Progress file: {progress_file}")
     print(f"Use LSL: {use_lsl}")
     
-    # Initialize LSL if requested
     lsl_initialized = False
     if use_lsl:
-        # Small delay to ensure control panel stream is destroyed
         time.sleep(1)
         lsl_initialized = create_lsl_outlet()
         if lsl_initialized:
             print("Fingertapping: LSL stream created successfully")
         else:
-            print("Warning: Failed to create LSL stream, falling back to keystrokes")
+            print("Warning: Failed to create LSL stream, using fallback")
     
     # -- initialize pygame
     pygame.mixer.init()

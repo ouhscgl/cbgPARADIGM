@@ -16,7 +16,7 @@ from pathlib import Path
 from paradigm_utils import (
     update_progress, send_keystroke, check_for_quit,
     display_message, wait_period, find_window_with_partial_name,
-    ensure_window_focus, create_lsl_outlet
+    ensure_window_focus, create_lsl_outlet, play_audio
 )
 
 # Window name constant
@@ -119,8 +119,7 @@ def get_instructions(stim_type):
         return LETTER_INSTRUCTIONS
 
 def run_rest_states(screen, font, rest_states, rest_period, progress_file=None, use_lsl=False):
-    """Run the appropriate rest states based on experiment profile"""
-    # Rest states should take 0-30% of the total progress
+    audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
     total_rest_progress = 30.0
     progress_per_state = total_rest_progress / len(rest_states) if rest_states else 0
     
@@ -160,6 +159,7 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None, 
                               width_screen=width_screen,
                               height_screen=height_screen):
                 return True
+            play_audio(audio_path / 'beep.mp3')
         
         elif state == 'open':
             # Show instructions (takes 20% of this state's progress)
@@ -189,6 +189,7 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None, 
                               width_screen=width_screen,
                               height_screen=height_screen):
                 return True
+            play_audio(audio_path / 'beep.mp3')
         
         elif state == 'none':
             pass
@@ -201,8 +202,8 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
     pygame_hwnd = win32gui.FindWindow(None, WINDOW_NAME)
     """Run the cognitive trials portion of the experiment"""
     # -- Initialize output storage variables
-    temp_st, temp_sm, temp_er, temp_ar, temp_rt = [], [], [], [], []
-    results_df = pd.DataFrame()  # Empty DataFrame to store results
+    temp_st, temp_sm, temp_er, temp_ar, temp_rt, temp_offset = [], [], [], [], [], []
+    results_df = pd.DataFrame()
     
     # Get the appropriate instructions based on the stimulus type
     instructions = get_instructions(profile["stim_type"])
@@ -264,7 +265,7 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
                           image_path=image_path,
                           width_screen=width_screen,
                           height_screen=height_screen):
-            return pd.DataFrame()  # Return empty DataFrame if quit
+            return pd.DataFrame()
             
         # Set response
         response = stimulus.iloc[:, stimulus.columns.get_loc(i) + 1]
@@ -278,13 +279,13 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
         # Calculate progress increment per stimulus
         stim_count = len(stimulus[i])
         progress_per_stim = (stimuli_progress_end - stimuli_progress_start) / stim_count if stim_count > 0 else 0
+        stim_offset = 0
         
         for idx, (stim, resp) in enumerate(zip(stimulus[i], response)):
             # Progress for this individual stimulus
             stim_progress_start = stimuli_progress_start + (idx * progress_per_stim)
             stim_progress_end = stimuli_progress_start + ((idx + 1) * progress_per_stim)
             
-            # Update progress for each stimulus
             if progress_file:
                 update_progress(progress_file, stim_progress_start, 
                                f"Processing stimulus {idx+1}/{stim_count} in {i}")
@@ -295,22 +296,20 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
             
             # Progress tracking variables
             last_update_time = start_time
-            update_interval = 50  # Update every 50ms
+            update_interval = 50
             
+            temp_offset.append(stim_offset)
             woodpecker = random.uniform(0.9, 1.1)
             total_duration = woodpecker * (CLC_STIMU + CLC_INTER)
-            
+            stim_offset += total_duration
+
             while pygame.time.get_ticks() - start_time < total_duration:
-                # Try to ensure focus with our function
                 ensure_window_focus(pygame_hwnd)
                 
                 current_time = pygame.time.get_ticks() - start_time
                 is_stimulus_phase = current_time < CLC_STIMU
                 
-                # Fill screen with black background
                 screen.fill((0, 0, 0))
-                
-                # Draw the white rectangle
                 pygame.draw.rect(screen, (255, 255, 255), rectangle, 2)
                 
                 if is_stimulus_phase:
@@ -357,15 +356,14 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
             temp_er.append(resp)
             temp_ar.append(key_pressed)
             temp_rt.append(timepressed)
-            
-            # Save data after each user input
-            # Update the results DataFrame
+
             results_df = pd.DataFrame({
                 'StimulusType'    : temp_st, 
                 'Stimulus'        : temp_sm, 
                 'ExpectedResponse': temp_er, 
                 'ActualResponse'  : temp_ar, 
-                'ReactionTime'    : temp_rt
+                'ReactionTime'    : temp_rt,
+                'StimOffset'      : temp_offset
             })
             
             # Save interim results if subject_id is provided

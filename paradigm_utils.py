@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Utility functions for the GeroScience Lab paradigms (n-back and fingertapping).
-This module contains shared functionality to reduce code duplication.
+Utility functions for the GeroScience Lab paradigms.
+Created by: zkaposzt @ OU
 """
 
 import pygame

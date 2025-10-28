@@ -10,25 +10,18 @@ class ExportResultsWindow:
     def __init__(self, parent, results_data):
         self.results = results_data
         
-        # Create the popup window - compact size
         self.window = tk.Toplevel(parent)
         self.window.title("Export Results")
         geom_x = self.window.master.winfo_width() - 33
         self.window.geometry(f"{geom_x}x100")
-        print()
         self.window.resizable(False, False)
-        
-        # Center the window
         self.window.transient(parent)
         self.window.grab_set()
         
-        # Main frame with padding
+        # Main results window
         main_frame = ttk.Frame(self.window, padding="5")
         main_frame.pack(fill="both", expand=True)
-        
-        # Results list
         self.create_results_list(main_frame)                
-        # Center the window on parent
         self.center_window()
     
     def create_results_list(self, parent):
