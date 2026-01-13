@@ -95,16 +95,6 @@ def find_window_with_partial_name(partial_name):
     return results[0][0] if results else None
 
 def send_keystroke(pygame_window_name=None, use_lsl=False):
-    """
-    Unified function to send keystroke events to all possible devices with robust error handling
-    
-    Args:
-        pygame_window_name: Name of the pygame window to return focus to after sending keystrokes
-        use_lsl: If True, send LSL triggers instead of keystrokes for old NIRS device
-    
-    Returns:
-        bool: True if any keystroke/trigger was sent successfully
-    """
     # Track if any keystroke was sent successfully
     success = False
     

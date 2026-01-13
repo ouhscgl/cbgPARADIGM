@@ -1,23 +1,23 @@
-=== EXPORT LOG - 2025-09-25 10:06:40 ===
-Subject ID: NRA123_V1
+=== EXPORT LOG - 2026-01-13 10:18:15 ===
+Subject ID: NRA134_V2
 
 FNIRS_NBACK:
   Status: success
   Message: Folder copied successfully
-  Path: C:\Projects\NRA\NIR_DAT\NRA123_V1_NIR_NBK
+  Path: C:\Projects\NRA\NIR_DAT\NRA134_V2_NIR_NBK
 
 FNIRS_FINGERTAPPING:
   Status: success
   Message: Folder copied successfully
-  Path: C:\Projects\NRA\NIR_DAT\NRA123_V1_NIR_FTP
+  Path: C:\Projects\NRA\NIR_DAT\NRA134_V2_NIR_FTP
 
 EEG_DATA:
   Status: success
   Message: File copied successfully
-  Path: C:\Projects\NRA\EEG_DAT\NRA123_V1_EEG_NBK_DAT.edf
+  Path: C:\Projects\NRA\EEG_DAT\NRA134_V2_EEG_NBK_DAT.edf
 
 EEG_MARKERS:
   Status: success
   Message: File copied successfully
-  Path: C:\Projects\NRA\EEG_DAT\NRA123_V1_EEG_NBK_MRK.csv
+  Path: C:\Projects\NRA\EEG_DAT\NRA134_V2_EEG_NBK_MRK.csv
 
