@@ -118,9 +118,9 @@ def get_instructions(stim_type):
     else:
         return LETTER_INSTRUCTIONS
 
-def run_rest_states(screen, font, rest_states, rest_period, progress_file=None, use_lsl=False):
+def run_rest_states(screen, font, rest_states, rest_period, progress_file=None, use_lsl=False, use_sound=True):
     audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
-    total_rest_progress = 30.0
+    total_rest_progress = 100
     progress_per_state = total_rest_progress / len(rest_states) if rest_states else 0
     
     for enum, state in enumerate(rest_states):
@@ -159,7 +159,8 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None, 
                               width_screen=width_screen,
                               height_screen=height_screen):
                 return True
-            play_audio(audio_path / 'beep.mp3')
+            if use_sound:
+                play_audio(audio_path / 'beep.mp3')
         
         elif state == 'open':
             # Show instructions (takes 20% of this state's progress)
@@ -189,7 +190,8 @@ def run_rest_states(screen, font, rest_states, rest_period, progress_file=None, 
                               width_screen=width_screen,
                               height_screen=height_screen):
                 return True
-            play_audio(audio_path / 'beep.mp3')
+            if use_sound:
+                play_audio(audio_path / 'beep.mp3')
         
         elif state == 'none':
             pass
@@ -221,7 +223,7 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
     os.makedirs(images_path, exist_ok=True)
     
     # Trials take 30-90% of the total progress (60% total)
-    total_trials_progress = 60.0
+    total_trials_progress = 100
     progress_per_trial_type = total_trials_progress / len(stim_type) if stim_type else 0
     
     # Create a white rectangle that's half the screen height
@@ -411,6 +413,8 @@ def parse_arguments():
                         help='Experiment profile to use')
     parser.add_argument('--use_lsl', action='store_true', 
                         help='Use LSL triggers for old NIRS device instead of keystrokes')
+    parser.add_argument('--use_sound', action='store_true',
+                        help='Disable beep sounds')
     
     # Handle both direct argparse and old-style sys.argv
     if len(sys.argv) == 1:
@@ -478,6 +482,9 @@ def main():
         display_message(screen, font, MSG_INTRO, 
                       width_screen=width_screen, height_screen=height_screen)
         
+        if args.progress_file:
+            update_progress(args.progress_file, 100, "Press 'W' to continue...")
+
         if check_for_quit():
             return
             
@@ -490,8 +497,8 @@ def main():
     
     # Run the appropriate rest states based on profile
     if run_rest_states(screen, font, profile["rest_states"], profile["rest_period"], 
-                      args.progress_file, use_lsl=args.use_lsl and lsl_initialized):
-        return  # Early exit if user quits during rest states
+                      args.progress_file, use_lsl=args.use_lsl and lsl_initialized, use_sound=args.use_sound):
+        return
     
     # Waiting room
     ensure_window_focus(pygame_hwnd)
@@ -500,6 +507,9 @@ def main():
         clock.tick(60)
         display_message(screen, font, MSG_POSTREST, 
                      width_screen=width_screen, height_screen=height_screen)
+        
+        if args.progress_file:
+            update_progress(args.progress_file, 100, "Press 'W' to continue...")
         
         if check_for_quit():
             return

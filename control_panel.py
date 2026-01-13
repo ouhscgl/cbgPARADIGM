@@ -90,9 +90,7 @@ class ExportResultsWindow:
 class ControlPanel:
     def __init__(self, root):
         self.root = root
-        self.root.title("Memory Task Control Panel")
-        
-        # Make window slightly taller to accommodate dropdown
+        self.root.title("Paradigm Setup")
         self.root.geometry("400x500")
         
         if sys.platform == "win32":
@@ -101,7 +99,7 @@ class ControlPanel:
         else:
             left_screen_x = -1920
         x_pos = 50
-        y_pos = 550
+        y_pos = 450
         self.root.geometry(f"+{x_pos}+{y_pos}")
         
         # Main container frame
@@ -147,12 +145,9 @@ class ControlPanel:
         self.lsl_status_label = ttk.Label(lsl_frame, text="- Creating stream...")
         self.lsl_status_label.pack(side="left", padx=(5, 0))
         
-        # Store LSL outlet
         self.lsl_outlet = None
-        
-        # Initialize LSL stream if checkbox is checked
         self.on_lsl_toggle()
-        
+
         # Controls frame
         button_frame = ttk.LabelFrame(main_frame, text="Experiment Selection", padding="10")
         button_frame.pack(fill="x", padx=5, pady=5)
@@ -177,17 +172,30 @@ class ControlPanel:
         }
         
         # Create dropdown menu
+        dropdown_frame = ttk.Frame(button_frame)
+        dropdown_frame.pack(fill="x", pady=5)
+
+        # Create dropdown menu (takes most space on left)
         self.selected_experiment = tk.StringVar()
         self.experiment_dropdown = ttk.Combobox(
-            button_frame, 
+            dropdown_frame, 
             textvariable=self.selected_experiment,
             state="readonly"
         )
-        
+
         # Set dropdown values
         self.experiment_dropdown['values'] = list(self.experiments.keys())
         self.experiment_dropdown.current(0)  # Set default selection to first item
-        self.experiment_dropdown.pack(fill="x", pady=5)
+        self.experiment_dropdown.pack(side="left", fill="x", expand=True, padx=(0, 5))
+
+        # Sound checkbox (fixed size, right-aligned)
+        self.use_beep_var = tk.BooleanVar(value=True)
+        self.beep_checkbox = ttk.Checkbutton(
+            dropdown_frame,
+            text="Play sound",
+            variable=self.use_beep_var
+        )
+        self.beep_checkbox.pack(side="right")
         
         # Start button
         self.start_button = ttk.Button(
@@ -202,7 +210,7 @@ class ControlPanel:
         progress_frame.pack(fill="x", padx=5, pady=5)
         
         # Status label above progress bar
-        self.status_label = ttk.Label(progress_frame, text="Ready to start")
+        self.status_label = ttk.Label(progress_frame, text="Initialization complete. Select experiment to start...")
         self.status_label.pack(fill="x", pady=(0, 5))
         
         # Progress bar with explicit height
@@ -220,10 +228,16 @@ class ControlPanel:
         self.percentage_label = ttk.Label(progress_frame, text="0%")
         self.percentage_label.pack(fill="x")
         
-        # Debug label to show process status
-        self.debug_label = ttk.Label(main_frame, text="Process: Not started")
-        self.debug_label.pack(fill="x", pady=5)
-        
+        # Termination instructions
+        self.termination_label = ttk.Label(
+            main_frame, 
+            text="Press Ctrl + C to terminate the ongoing test.",
+            font=("TkDefaultFont", 10, "italic"),
+            foreground="gray"
+        )
+        self.termination_label.pack(fill="x", pady=(5, 0))
+
+
         # Store process and temp file
         self.process = None
         self.temp_file = None
@@ -251,7 +265,7 @@ class ControlPanel:
                 return
             
             # Show a message indicating export is starting
-            self.debug_label.config(text=f"Exporting data for {subject}...")
+            print(f"Exporting data for {subject}...")
             self.root.update()  # Force GUI update
             
             # Run the export script in a separate process
@@ -274,12 +288,9 @@ class ControlPanel:
             if export_results:
                 # Show results window with simplified data
                 ExportResultsWindow(self.root, export_results)
-                self.debug_label.config(text="Export completed - check results window")
             else:
                 # Create basic error result if no JSON found
                 if process.returncode == 0:
-                    # Shouldn't happen, but handle gracefully
-                    self.debug_label.config(text="Export completed successfully")
                     messagebox.showinfo("Export Complete", f"Data exported for {subject}")
                 else:
                     # Show error message
@@ -293,7 +304,7 @@ class ControlPanel:
                         }
                     }
                     ExportResultsWindow(self.root, error_results)
-                    self.debug_label.config(text="Export failed - check export_log.txt")
+                    print("Export failed - check export_log.txt")
                         
         except Exception as e:
             error_msg = f"Could not run export script: {str(e)}"
@@ -310,7 +321,7 @@ class ControlPanel:
                 }
             }
             ExportResultsWindow(self.root, error_results)
-            self.debug_label.config(text="Export error - check export_log.txt")
+            print("Export error - check export_log.txt")
 
     def parse_export_results(self, stdout):
         """Parse the JSON results from the export script output - simplified version"""
@@ -449,15 +460,14 @@ class ControlPanel:
             json.dump({"progress": 0, "status": f"Starting {experiment_name}..."}, self.temp_file)
             self.temp_file.flush()
             
-            # Update debug label
-            self.debug_label.config(text=f"Temp file created: {os.path.basename(temp_path)}")
-            
             # Prepare command line arguments
             if profile == "fingertapping":
                 # Old style for fingertapping with LSL flag
                 cmd_args = [sys.executable, script_name, subject, temp_path]
                 if self.use_lsl_var.get():
                     cmd_args.append("--use_lsl")
+                if self.use_beep_var.get():
+                    cmd_args.append("--use_sound")
             else:
                 # New style for unified script with profile argument and LSL flag
                 cmd_args = [sys.executable, script_name, 
@@ -466,6 +476,8 @@ class ControlPanel:
                            "--profile", profile]
                 if self.use_lsl_var.get():
                     cmd_args.append("--use_lsl")
+                if self.use_beep_var.get():
+                    cmd_args.append("--use_sound")
             
             # Start the process
             self.process = subprocess.Popen(
@@ -483,7 +495,7 @@ class ControlPanel:
                 self.lsl_status_label.config(text=" - Transferred")
             
             # Update debug label
-            self.debug_label.config(text=f"Process started with PID: {self.process.pid}")
+            print(f"Process started with PID: {self.process.pid}")
             
             # Disable start button while experiment is running
             self.start_button.state(['disabled'])
@@ -507,12 +519,10 @@ class ControlPanel:
             # Check if process is still running
             returncode = self.process.poll()
             
-            if returncode is not None:
-                # Process has finished (either just now or earlier)
-                
+            if returncode is not None:                
                 # If we haven't already marked it complete, do so now
                 if not self.experiment_complete:
-                    self.debug_label.config(text=f"Process ended with code: {returncode}")
+                    print(f"Process ended with code: {returncode}")
                     self.cleanup()
                     self.progress_var.set(100)
                     self.status_label.config(text="Completed (Window still open)")
@@ -545,22 +555,21 @@ class ControlPanel:
                             self.progress_var.set(progress)
                             self.status_label.config(text=status)
                             self.percentage_label.config(text=f"{progress}%")
-                            self.debug_label.config(text=f"Process running: {progress}% - {status}")
+                            print(f"Process running: {progress}% - {status}")
                 except Exception as e:
-                    self.debug_label.config(text=f"Error reading progress: {str(e)}")
+                    print(f"Error reading progress: {str(e)}")
                 
         # Schedule next check
         self.root.after(100, self.check_progress)
     
     # -- main cleanup funcion
     def cleanup(self):
-        """Clean up temporary files"""
         if self.temp_file:
             try:
                 self.temp_file.close()
                 os.unlink(self.temp_file.name)
             except Exception as e:
-                self.debug_label.config(text=f"Cleanup error: {str(e)}")
+                print(f"Cleanup error: {str(e)}")
             self.temp_file = None
     # --  entry for cleanup function
     def __del__(self):

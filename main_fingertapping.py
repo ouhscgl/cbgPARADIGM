@@ -72,7 +72,7 @@ def main():
     # -- update progress file
     if progress_file:
         lsl_status = " (LSL enabled)" if use_lsl and lsl_initialized else ""
-        update_progress(progress_file, 0, f"Setup complete{lsl_status}. Press any key to continue...")
+        update_progress(progress_file, 0, f"Setup complete{lsl_status}. Press 'W' to continue...")
 
     # -- enter waiting room
     waiting = True
