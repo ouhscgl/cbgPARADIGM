@@ -120,7 +120,7 @@ def get_instructions(stim_type):
 
 def run_rest_states(screen, font, rest_states, rest_period, progress_file=None, use_lsl=False, use_sound=True):
     audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
-    total_rest_progress = 100
+    total_rest_progress = 99
     progress_per_state = total_rest_progress / len(rest_states) if rest_states else 0
     
     for enum, state in enumerate(rest_states):
@@ -223,7 +223,7 @@ def run_trials(screen, font, stimulus, stim_type, progress_file=None, subject_id
     os.makedirs(images_path, exist_ok=True)
     
     # Trials take 30-90% of the total progress (60% total)
-    total_trials_progress = 100
+    total_trials_progress = 95
     progress_per_trial_type = total_trials_progress / len(stim_type) if stim_type else 0
     
     # Create a white rectangle that's half the screen height
@@ -483,7 +483,7 @@ def main():
                       width_screen=width_screen, height_screen=height_screen)
         
         if args.progress_file:
-            update_progress(args.progress_file, 100, "Press 'W' to continue...")
+            update_progress(args.progress_file, 0, "Press 'W' to continue...")
 
         if check_for_quit():
             return
@@ -509,7 +509,7 @@ def main():
                      width_screen=width_screen, height_screen=height_screen)
         
         if args.progress_file:
-            update_progress(args.progress_file, 100, "Press 'W' to continue...")
+            update_progress(args.progress_file, 0, "Press 'W' to continue...")
         
         if check_for_quit():
             return
