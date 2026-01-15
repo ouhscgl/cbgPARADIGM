@@ -1,0 +1,18 @@
+{
+    "display": {
+        "width"             : 1920,
+        "height"            : 1080,
+        "monitor_index"     : 1
+    },
+    "paths": {
+        "project_root"      : "C:\\Projects",
+        "nirx_data"         : "C:\\NIRx\\Data",
+        "emotiv_data"       : "C:\\Emotiv_data",
+        "video_instructions": "C:\\Users\\biochemlab\\Desktop\\N-back instructions video.mov"
+    },
+    "control_panel": {
+        "window_name"       : "Paradigm Setup",
+        "window_position"   : [50, 450],
+        "window_size"       : [400, 500]
+    }
+}
