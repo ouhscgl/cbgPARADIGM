@@ -1,10 +1,13 @@
 # Import dependencies
-import pygame, random, string, os
+import pygame, random, string, os, sys
 import numpy as np
 from pathlib import Path
 
 # Import shared utility functions
-from paradigm_utils import (
+script_dir = Path(__file__).resolve().parent
+parent_dir = script_dir.parent
+sys.path.insert(0, str(parent_dir))
+from auxfunc.paradigm_utils import (
     check_for_quit, display_message
 )
 

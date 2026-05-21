@@ -1,15 +1,34 @@
 {
-    "fingertapping"         : {
-        "display_name"      : "Fingertapping",
-        "module"            : "fingertapping.py",
-        "task_duration"     : 10000,
-        "rest_duration"     : 15000,
-        "resting_state"     : 60000,
-        "repetitions"       : ["left", "right","left", "right","left", "right"],
-        "appendix"          : "_NIR_FTP"
+    "NRA_letter"            : {
+        "display_name"      : "NRA: Nback (letters)",
+        "module"            : "nback.py",
+        "stim_type"         : "letter_stimulus.csv",
+        "rest_period"       : 60000,
+        "instructions"      : 10000,
+        "stim_presentation" : 500,
+        "stim_cooldown"     : 1500,
+        "rest_states"       : ["open"],
+        "appendix"          : "_NIR_COG",
+        "keystroke_programs": [
+            {"window": "NIRx NIRStar", "key": "F8"}
+        ]
+    },
+    "NRA_number"            : {
+        "display_name"      : "NRA: Nback (numbers)",
+        "module"            : "nback.py",
+        "stim_type"         : "number_stimulus.csv",
+        "rest_period"       : 60000,
+        "instructions"      : 10000,
+        "stim_presentation" : 500,
+        "stim_cooldown"     : 1500,
+        "rest_states"       : ["open"],
+        "appendix"          : "_EEG_COG",
+        "keystroke_programs": [
+            {"window": "EmotivPRO",    "key": "8" }
+        ]
     },
     "TBI_letter"            : {
-        "display_name"      : "Nback (letters) TBI",
+        "display_name"      : "TBI: Nback (letters)",
         "module"            : "nback.py",
         "stim_type"         : "letter_stimulus.csv",
         "rest_period"       : 72000,
@@ -17,32 +36,14 @@
         "stim_presentation" : 500,
         "stim_cooldown"     : 1500,
         "rest_states"       : ["open"],
-        "appendix"          : "_NIR_EEG_COG"
-    },
-    "NRA_letter"            : {
-        "display_name"      : "Nback (letters) NRA",        
-        "module"            : "nback.py",
-        "stim_type"         : "letter_stimulus.csv",
-        "rest_period"       : 60000,
-        "instructions"      : 10000,
-        "stim_presentation" : 500,
-        "stim_cooldown"     : 1500,
-        "rest_states"       : ["open"],
-        "appendix"          : "_NIR_COG"
-    },
-    "NRA_number"            : {
-        "display_name"      : "Nback (numbers) NRA",  
-        "module"            : "nback.py",
-        "stim_type"         : "number_stimulus.csv",
-        "rest_period"       : 60000,
-        "instructions"      : 10000,
-        "stim_presentation" : 500,
-        "stim_cooldown"     : 1500,
-        "rest_states"       : ["open"],
-        "appendix"          : "_EEG_COG"
+        "appendix"          : "_NIR_EEG_COG",
+        "keystroke_programs": [
+            {"window": "Aurora fNIRS", "key": "F8"},
+            {"window": "g.Recorder",   "key": "8" }
+        ]
     },
     "SCog_letter"           : {
-        "display_name"      : "Nback (letters) SCog",  
+        "display_name"      : "SCog: Nback (letters)",
         "module"            : "nback.py",
         "stim_type"         : "letter_stimulus.csv",
         "rest_period"       : 300000,
@@ -50,10 +51,14 @@
         "stim_presentation" : 500,
         "stim_cooldown"     : 1500,
         "rest_states"       : ["closed", "open"],
-        "appendix"          : "_NIR_EEG_COG"
+        "appendix"          : "_NIR_EEG_COG",
+        "keystroke_programs": [
+            {"window": "Aurora fNIRS", "key": "F8"},
+            {"window": "g.Recorder",   "key": "8" }
+        ]
     },
     "LTIA_letter"           : {
-        "display_name"      : "Nback (letters) LTIA",  
+        "display_name"      : "LITA: Nback (letters)",
         "module"            : "nback.py",
         "stim_type"         : "letter_stimulus.csv",
         "rest_period"       : 300000,
@@ -61,10 +66,14 @@
         "stim_presentation" : 500,
         "stim_cooldown"     : 1500,
         "rest_states"       : ["closed", "open"],
-        "appendix"          : "_NIR_EEG_COG_LETTER"
+        "appendix"          : "_NIR_EEG_COG_LETTER",
+        "keystroke_programs": [
+            {"window": "Aurora fNIRS", "key": "F8"},
+            {"window": "g.Recorder",   "key": "8" }
+        ]
     },
     "LTIA_number"           : {
-        "display_name"      : "Nback (numbers) LTIA",  
+        "display_name"      : "LTIA: Nback (numbers)",
         "module"            : "nback.py",
         "stim_type"         : "number_stimulus.csv",
         "rest_period"       : 300000,
@@ -72,6 +81,24 @@
         "stim_presentation" : 500,
         "stim_cooldown"     : 1500,
         "rest_states"       : ["closed", "open"],
-        "appendix"          : "_NIR_EEG_COG_NUMBER"
+        "appendix"          : "_NIR_EEG_COG_NUMBER",
+        "keystroke_programs": [
+            {"window": "Aurora fNIRS", "key": "F8"},
+            {"window": "g.Recorder",   "key": "8" }
+        ]
+    },
+    "fingertapping"         : {
+        "display_name"      : "Fingertapping",
+        "module"            : "fingertapping.py",
+        "task_duration"     : 10000,
+        "rest_duration"     : 15000,
+        "resting_state"     : 60000,
+        "repetitions"       : ["left", "right","left", "right","left", "right"],
+        "appendix"          : "_NIR_FTP",
+        "keystroke_programs": [
+            {"window": "Aurora fNIRS", "key": "F8"},
+            {"window": "g.Recorder",   "key": "8" },
+            {"window": "NIRx NIRStar", "key": "F8"}
+        ]
     }
 }

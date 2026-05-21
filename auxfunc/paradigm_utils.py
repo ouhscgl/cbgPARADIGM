@@ -5,54 +5,212 @@ Utility functions for the GeroScience Lab paradigms.
 Created by: zkaposzt @ OU
 """
 
-import pygame
-import json
-import time
-import os
-import win32gui
-import win32con
-from win32api import keybd_event
-import pyautogui
+import pygame, json, time, os
+
+# Windows keypress imports
+try:
+    import win32gui
+    import win32con
+    from win32api import keybd_event
+    import pyautogui
+    _WIN32_AVAILABLE = True
+except ImportError:
+    _WIN32_AVAILABLE = False
+
+VK_MAP = {
+    'F1':  0x70, 'F2':  0x71, 'F3':  0x72, 'F4':  0x73,
+    'F5':  0x74, 'F6':  0x75, 'F7':  0x76, 'F8':  0x77,
+    'F9':  0x78, 'F10': 0x79, 'F11': 0x7A, 'F12': 0x7B,
+    '0':   0x30, '1':   0x31, '2':   0x32, '3':   0x33, '4': 0x34,
+    '5':   0x35, '6':   0x36, '7':   0x37, '8':   0x38, '9': 0x39,
+}
 
 # Global LSL outlet variable
 _lsl_outlet = None
 
-def create_lsl_outlet():
-    """Create LSL outlet for sending triggers"""
-    global _lsl_outlet
-    try:
-        import pylsl
-        print("Creating LSL trigger stream...")
-        info = pylsl.StreamInfo(
-            name='TriggerStream',
-            type='Markers',
-            channel_count=1,
-            nominal_srate=0,
-            channel_format='int32',
-            source_id='paradigm_triggers'  # Same source_id as control panel
-        )
-        _lsl_outlet = pylsl.StreamOutlet(info)
-        print("LSL stream created successfully")
+# ---- Win32 helpers (no-op on other platforms) ------------------------------ #
+def _find_window_partial(partial_name):
+    if not _WIN32_AVAILABLE:
+        return None
+    results = []
+    def cb(hwnd, results):
+        if partial_name in win32gui.GetWindowText(hwnd):
+            results.append(hwnd)
         return True
-    except ImportError:
-        print("Warning: pylsl not available - LSL triggers disabled")
-        return False
-    except Exception as e:
-        print(f"Error creating LSL outlet: {e}")
-        return False
+    win32gui.EnumWindows(cb, results)
+    return results[0] if results else None
 
-def send_lsl_trigger(trigger_value):
-    """Send LSL trigger"""
-    global _lsl_outlet
-    if _lsl_outlet:
+
+def _ensure_focus(hwnd, max_attempts=20, delay_ms=50):
+    if not _WIN32_AVAILABLE or hwnd is None:
+        return False
+    pyautogui.press("alt")  # Win32 focus-stealing workaround
+    for _ in range(max_attempts):
         try:
-            _lsl_outlet.push_sample([trigger_value])
-            print(f"LSL trigger sent: {trigger_value}")
+            win32gui.SetForegroundWindow(hwnd)
             return True
-        except Exception as e:
-            print(f"Error sending LSL trigger: {e}")
-            return False
+        except Exception:
+            time.sleep(delay_ms / 1000)
     return False
+
+# ---- The manager ---------------------------------------------------------- #
+class TriggerManager:
+    def __init__(self, use_lsl=True, programs=None, pulse_ms=50,
+                 lsl_source_id='paradigm_triggers'):
+        self.programs   = programs or []
+        self._ttl_dev   = None
+        self._lsl_out   = None
+        self._method    = 'none'
+
+        self._init_ttl(pulse_ms)
+        if use_lsl:
+            self._init_lsl(lsl_source_id)
+
+        if self._ttl_dev is not None:
+            self._method = 'ttl'
+        elif self._lsl_out is not None:
+            self._method = 'lsl'
+        elif self.programs and _WIN32_AVAILABLE:
+            self._method = 'keystroke'
+
+        print(f"TriggerManager: active = {self._method.upper()} "
+              f"(ttl={self._ttl_dev is not None}, "
+              f"lsl={self._lsl_out is not None}, "
+              f"keystroke_targets={len(self.programs)})")
+
+    def _init_ttl(self, pulse_ms):
+        try:
+            import pyxid2
+        except ImportError:
+            print("TriggerManager: pyxid2 not installed; skipping TTL")
+            return
+        try:
+            devices = pyxid2.get_xid_devices()
+            if not devices:
+                print("TriggerManager: no XID devices detected")
+                return
+            dev = devices[0]
+            dev.reset_base_timer()
+            dev.set_pulse_duration(pulse_ms)
+            self._ttl_dev = dev
+            print(f"TriggerManager: TTL ready -> {dev}")
+        except Exception as e:
+            print(f"TriggerManager: TTL init failed -> {e}")
+            self._ttl_dev = None
+
+    def _init_lsl(self, source_id):
+        try:
+            import pylsl
+        except ImportError:
+            print("TriggerManager: pylsl not installed; skipping LSL")
+            return
+        try:
+            info = pylsl.StreamInfo(
+                name='TriggerStream', type='Markers',
+                channel_count=1, nominal_srate=0,
+                channel_format='int32', source_id=source_id,
+            )
+            self._lsl_out = pylsl.StreamOutlet(info)
+            print("TriggerManager: LSL stream open")
+        except Exception as e:
+            print(f"TriggerManager: LSL init failed -> {e}")
+            self._lsl_out = None
+
+    # ---- access point for the paradigm ---------------------------------- #
+    def send(self, value=8, return_focus_to=None):
+        if self._method == 'ttl':
+            try:
+                self._ttl_dev.activate_line(bitmask=int(value))
+                return 'ttl'
+            except Exception as e:
+                print(f"TriggerManager: TTL send failed ({e}); demoting")
+                self._demote_from_ttl()
+
+        if self._method == 'lsl':
+            try:
+                self._lsl_out.push_sample([int(value)])
+                return 'lsl'
+            except Exception as e:
+                print(f"TriggerManager: LSL send failed ({e}); demoting")
+                self._demote_from_lsl()
+
+        if self._method == 'keystroke':
+            self._send_keystrokes(return_focus_to)
+            return 'keystroke'
+
+        return 'none'
+
+    # ---- keystroke fallback --------------------------------------------- #
+    def _send_keystrokes(self, return_focus_to=None):
+        if not _WIN32_AVAILABLE:
+            return
+        for prog in self.programs:
+            window = prog.get('window', '')
+            key    = prog.get('key', 'F8')
+            vk     = VK_MAP.get(key.upper())
+            if vk is None:
+                print(f"TriggerManager: unknown key '{key}' for {window}")
+                continue
+            hwnd = _find_window_partial(window)
+            if hwnd is None:
+                print(f"TriggerManager: window '{window}' not found")
+                continue
+            try:
+                _ensure_focus(hwnd)
+                keybd_event(vk, 0, 0, 0)
+                time.sleep(0.01)
+                keybd_event(vk, 0, win32con.KEYEVENTF_KEYUP, 0)
+            except Exception as e:
+                print(f"TriggerManager: keystroke to {window} failed ({e})")
+        if return_focus_to:
+            hwnd = _find_window_partial(return_focus_to)
+            if hwnd is not None:
+                _ensure_focus(hwnd)
+
+    # ---- demotion -------------------------------------------------------- #
+    def _demote_from_ttl(self):
+        if self._lsl_out is not None:
+            self._method = 'lsl'
+        elif self.programs and _WIN32_AVAILABLE:
+            self._method = 'keystroke'
+        else:
+            self._method = 'none'
+        print(f"TriggerManager: now using {self._method.upper()}")
+
+    def _demote_from_lsl(self):
+        if self.programs and _WIN32_AVAILABLE:
+            self._method = 'keystroke'
+        else:
+            self._method = 'none'
+        print(f"TriggerManager: now using {self._method.upper()}")
+
+    # ---- introspection (for the future UI indicators) ------------------- #
+    def status(self):
+        return {
+            'ttl_available':  self._ttl_dev is not None,
+            'lsl_available':  self._lsl_out is not None,
+            'active_method':  self._method,
+            'programs':       [p.get('window') for p in self.programs],
+        }
+
+    # ---- cleanup -------------------------------------------------------- #
+    def close(self):
+        if self._ttl_dev is not None:
+            try:
+                self._ttl_dev.con.close()
+            except Exception as e:
+                print(f"TriggerManager: error closing TTL ({e})")
+            self._ttl_dev = None
+        if self._lsl_out is not None:
+            try:
+                del self._lsl_out
+            except Exception as e:
+                print(f"TriggerManager: error closing LSL ({e})")
+            self._lsl_out = None
+        self._method = 'none'
+
+    def __del__(self):
+        self.close()
 
 def ensure_window_focus(window_handle, max_attempts=20, delay_ms=50):
     """Attempt to set window focus with multiple retries"""
@@ -93,106 +251,6 @@ def find_window_with_partial_name(partial_name):
     results = []
     win32gui.EnumWindows(enum_windows_callback, results)
     return results[0][0] if results else None
-
-def send_keystroke(pygame_window_name=None, use_lsl=False):
-    # Track if any keystroke was sent successfully
-    success = False
-    
-    # -- new NIR input (always use keystrokes for new device)
-    try:
-        nNIR = "Aurora fNIRS"
-        nNIR_hwnd = find_window_with_partial_name(nNIR)
-        if nNIR_hwnd:
-            ensure_window_focus(nNIR_hwnd)
-            keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
-            time.sleep(0.01)
-            keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
-            success = True
-            print(f"Sent keystroke to {nNIR}")
-        else:
-            print(f"{nNIR} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {nNIR}: {e}")
-    
-    # -- old NIR input (use LSL if enabled, otherwise keystrokes)
-    try:
-        oNIR = "NIRx NIRStar"
-        if use_lsl:
-            # Send LSL trigger instead of keystroke for old NIRS
-            if send_lsl_trigger(8):  # Use trigger value 8 for old NIRS
-                success = True
-                print(f"Sent LSL trigger to {oNIR}")
-            else:
-                print(f"Failed to send LSL trigger to {oNIR}")
-        else:
-            # Traditional keystroke method
-            oNIR_hwnd = win32gui.FindWindow(None, "NIRx NIRStar 15.3")
-            if oNIR_hwnd: 
-                # Still try to send message even if setting foreground failed
-                ensure_window_focus(oNIR_hwnd) 
-                time.sleep(0.01)
-                keybd_event(0x77, 0, 0, 0)  # key down for 'F8'
-                time.sleep(0.01)
-                keybd_event(0x77, 0, win32con.KEYEVENTF_KEYUP, 0)
-                success = True
-                print(f"Sent keystroke to {oNIR}")
-            else:
-                print(f"{oNIR} window not found")
-    except Exception as e:
-        print(f"Error sending trigger/keystroke to {oNIR}: {e}")
-        
-    # -- new EEG input (always use keystrokes)
-    try:
-        nEEG = 'g.Recorder'
-        nEEG_hwnd = find_window_with_partial_name(nEEG)
-        if nEEG_hwnd:
-            ensure_window_focus(nEEG_hwnd)  
-            keybd_event(0x38, 0, 0, 0)  # key down for '8'
-            time.sleep(0.03)
-            keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
-            success = True
-            print(f"Sent keystroke to {nEEG}")
-        else:
-            print(f"{nEEG} window not found")
-    except Exception as e:
-        print(f"Error sending keystroke to {nEEG}: {e}")
-        
-    # -- old EEG input (use LSL if enabled, otherwise keystrokes)
-    try:
-        oEEG = "EmotivPRO"
-        if False:#use_lsl:
-            # Send LSL trigger instead of keystroke for old EEG
-            if send_lsl_trigger(8):  # Use trigger value 8 for old EEG
-                success = True
-                print(f"Sent LSL trigger to {oEEG}")
-            else:
-                print(f"Failed to send LSL trigger to {oEEG}")
-        else:
-            # Traditional keystroke method
-            oEEG_hwnd = find_window_with_partial_name(oEEG)
-            if oEEG_hwnd:
-                ensure_window_focus(oEEG_hwnd)
-                time.sleep(0.01)
-                keybd_event(0x38, 0, 0, 0)  # key down for '8'
-                time.sleep(0.01)
-                keybd_event(0x38, 0, win32con.KEYEVENTF_KEYUP, 0)
-                success = True
-                print(f"Sent keystroke to {oEEG}")
-            else:
-                print(f"{oEEG} window not found")
-    except Exception as e:
-        print(f"Error sending trigger/keystroke to {oEEG}: {e}")
-    
-    # Try to return to pygame window
-    if pygame_window_name:
-        try:
-            pygame_hwnd = win32gui.FindWindow(None, pygame_window_name)
-            ensure_window_focus(pygame_hwnd)
-        except Exception as e:
-            print(f"Error returning to pygame window: {e}")
-    
-    # Return overall success status
-    return success
 
 def check_for_quit():
     """Check if user is attempting to quit the application"""
