@@ -92,7 +92,7 @@ def get_instructions(stim_type):
 def run_rest_states(screen, font, rest_states, rest_period, instruction_time, window_name,
                     width_screen, height_screen, trigger, progress_file=None, use_sound=True):
 
-    audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / 'paradigms/_resources'
+    audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
 
     for enum, state in enumerate(rest_states):
         if state == 'none':
@@ -151,17 +151,7 @@ def run_trials(screen, font, stimulus, stim_type, settings, profile, width_scree
     image_path_appendix = 'num' if "number" in profile.get("stim_type", "").lower() else 'let'
 
     # -- Get the instruction images path (located in _resources/images)
-    resource_path = Path(os.path.dirname(os.path.abspath(__file__))) / 'paradigms/_resources'
-    images_path   = resource_path / 'images'
-    instruction_images = {}
-    for idx in range(len(instructions)):
-        image_filename = f"{image_path_appendix}{idx}.png"
-        image_path = images_path / image_filename
-        if image_path.exists():
-            try:
-                instruction_images[idx] = pygame.image.load(str(image_path))
-            except Exception as e:
-                print(f"Warning: Could not load instruction image {image_filename}: {e}")
+    resource_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
 
     progress_per_trial_type = 98 / len(stim_type) if stim_type else 0
 
@@ -184,7 +174,7 @@ def run_trials(screen, font, stimulus, stim_type, settings, profile, width_scree
                             f"Starting trial block: {i+1}/{len(stim_type)}")
 
         # Look for a task-specific image for this trial
-        trial_image_path = images_path / f"nback_{trial_type}_{image_path_appendix}.png"
+        trial_image_path = resource_path / 'images' / f"{trial_type}_{image_path_appendix}.png"
         image_path = str(trial_image_path) if trial_image_path.exists() else None
 
         # Display instruction screen (takes 10% of this trial type's progress)
@@ -367,7 +357,7 @@ def main():
         # Initialize pygame
         screen, clock, font, width_screen, height_screen, window_name = init_game(settings, profile)
 
-        stim_root   = Path(os.path.dirname(os.path.abspath(__file__))) / 'paradigms/_resources'
+        stim_root   = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
         stimulus    = pd.read_csv(stim_root / profile["stim_type"])
         stim_type   = [col for col in stimulus.columns if not col.endswith('response')]
         pygame_hwnd = win32gui.FindWindow(None, window_name)
