@@ -8,7 +8,7 @@ script_dir = Path(__file__).resolve().parent
 parent_dir = script_dir.parent
 sys.path.insert(0, str(parent_dir))
 from auxfunc.paradigm_utils import (
-    update_progress, check_for_quit, display_message, play_audio, TriggerManager
+    update_progress, check_for_quit, display_message, play_audio, TriggerManager, resolve_display
 )
 
 
@@ -61,8 +61,11 @@ def main():
 
     # Get values from configs
     display_config = settings.get('display', {})
-    width_screen   = display_config.get('width', 1920)
-    height_screen  = display_config.get('height', 1080)
+    display_idx, width_screen, height_screen = resolve_display(
+        display_config.get('monitor_index', 1),
+        display_config.get('width',  1920),
+        display_config.get('height', 1080),
+    )
 
     window_name        = profile.get('display_name', 'Fingertapping')
     task_duration      = profile.get('task_duration',  10000)
@@ -85,7 +88,7 @@ def main():
         pygame.display.set_caption(window_name)
 
         audio_path    = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
-        screen        = pygame.display.set_mode((width_screen, height_screen), display=1)
+        screen = pygame.display.set_mode((width_screen, height_screen), display=display_idx)
         font          = pygame.font.SysFont(None, 120)
 
         # Lobby 01: Welcome screen

@@ -212,6 +212,21 @@ class TriggerManager:
     def __del__(self):
         self.close()
 
+def resolve_display(requested_index, requested_width, requested_height):
+    pygame.display.init()
+    n_displays = pygame.display.get_num_displays()
+
+    if requested_index < n_displays:
+        return requested_index, requested_width, requested_height
+
+    try:
+        native_w, native_h = pygame.display.get_desktop_sizes()[0]
+    except Exception:
+        native_w, native_h = requested_width, requested_height
+    print(f"resolve_display: requested display {requested_index} not available "
+          f"({n_displays} present); using display 0 at {native_w}x{native_h}")
+    return 0, native_w, native_h
+
 def ensure_window_focus(window_handle, max_attempts=20, delay_ms=50):
     """Attempt to set window focus with multiple retries"""
     pyautogui.press("alt")
