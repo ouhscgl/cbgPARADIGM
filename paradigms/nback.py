@@ -92,7 +92,7 @@ def get_instructions(stim_type):
 def run_rest_states(screen, font, rest_states, rest_period, instruction_time, window_name,
                     width_screen, height_screen, trigger, progress_file=None, use_sound=True):
 
-    audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
+    audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / 'paradigms/_resources'
 
     for enum, state in enumerate(rest_states):
         if state == 'none':
@@ -151,7 +151,7 @@ def run_trials(screen, font, stimulus, stim_type, settings, profile, width_scree
     image_path_appendix = 'num' if "number" in profile.get("stim_type", "").lower() else 'let'
 
     # -- Get the instruction images path (located in _resources/images)
-    resource_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
+    resource_path = Path(os.path.dirname(os.path.abspath(__file__))) / 'paradigms/_resources'
     images_path   = resource_path / 'images'
     instruction_images = {}
     for idx in range(len(instructions)):
@@ -202,7 +202,7 @@ def run_trials(screen, font, stimulus, stim_type, settings, profile, width_scree
             return results_df
 
         # Set response
-        response = stimulus[f"{trial_type}_response"]
+        response = stimulus[f"{trial_type}-response"]
         # Block-onset marker
         trigger.send(value=8, return_focus_to=window_name)
 
@@ -367,7 +367,7 @@ def main():
         # Initialize pygame
         screen, clock, font, width_screen, height_screen, window_name = init_game(settings, profile)
 
-        stim_root   = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
+        stim_root   = Path(os.path.dirname(os.path.abspath(__file__))) / 'paradigms/_resources'
         stimulus    = pd.read_csv(stim_root / profile["stim_type"])
         stim_type   = [col for col in stimulus.columns if not col.endswith('response')]
         pygame_hwnd = win32gui.FindWindow(None, window_name)
