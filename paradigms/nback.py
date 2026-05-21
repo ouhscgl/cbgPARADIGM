@@ -10,9 +10,8 @@ parent_dir = script_dir.parent
 sys.path.insert(0, str(parent_dir))
 
 from auxfunc.paradigm_utils import (
-    update_progress, check_for_quit, display_message, ensure_window_focus, play_audio
+    update_progress, check_for_quit, display_message, ensure_window_focus, play_audio, TriggerManager
 )
-from auxfunc.trigger_manager import TriggerManager
 
 
 # Default keystroke fallback targets. Overridable per-paradigm via
