@@ -8,7 +8,7 @@ script_dir = Path(__file__).resolve().parent
 parent_dir = script_dir.parent
 sys.path.insert(0, str(parent_dir))
 from auxfunc.paradigm_utils import (
-    check_for_quit, display_message
+    check_for_quit, display_message, resolve_display
 )
 
 MSG_INTRO          = ['WORKING MEMORY TUTORIAL','PLEASE GET COMFORTABLE BEFORE WE', 
@@ -37,8 +37,8 @@ height_screen      = 1080
 def init_game():
     pygame.init()
     pygame.display.set_caption("Working Memory Tutorial")
-    screen = pygame.display.set_mode((width_screen, height_screen), display=1)
-    
+    display_idx, width_screen, height_screen = resolve_display(1, 1920, 1080)
+    screen = pygame.display.set_mode((width_screen, height_screen), display=display_idx)
     clock = pygame.time.Clock()
     font = pygame.font.SysFont(None, 120)
     return screen, clock, font
