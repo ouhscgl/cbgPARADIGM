@@ -120,6 +120,17 @@ def run_rest_states(screen, font, rest_states, rest_period, instruction_time, wi
 
     audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
 
+    # rest_period may be a single value (same length for every state) or a list
+    # aligned positionally with rest_states (e.g. ["closed","open"] -> [180000, 90000]).
+    if isinstance(rest_period, (list, tuple)):
+        periods = list(rest_period) or [60000]
+        if len(periods) < len(rest_states):
+            print(f"run_rest_states: rest_period has {len(periods)} entries for "
+                  f"{len(rest_states)} rest states; reusing last value for the remainder")
+            periods += [periods[-1]] * (len(rest_states) - len(periods))
+    else:
+        periods = [rest_period] * len(rest_states)
+
     for enum, state in enumerate(rest_states):
         if state == 'none':
             continue
@@ -142,7 +153,7 @@ def run_rest_states(screen, font, rest_states, rest_period, instruction_time, wi
 
         trigger.send(value=8, return_focus_to=window_name)
 
-        if display_message(screen, font, rest_display, rest_period, custom_font_size=300,
+        if display_message(screen, font, rest_display, periods[enum], custom_font_size=300,
                            progress_file=progress_file,
                            status=f"Rest state {enum+1}: in progress (eyes {state})",
                            progress_start=20,
