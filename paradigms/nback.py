@@ -10,7 +10,7 @@ parent_dir = script_dir.parent
 sys.path.insert(0, str(parent_dir))
 
 from auxfunc.paradigm_utils import (
-    update_progress, check_for_quit, display_message, ensure_window_focus, play_audio, TriggerManager, resolve_display
+    update_progress, check_for_quit, display_message, ensure_window_focus, play_audio, TriggerManager, resolve_display, load_strings
 )
 
 
@@ -19,7 +19,7 @@ from auxfunc.paradigm_utils import (
 DEFAULT_KEYSTROKE_PROGRAMS = [
     {'window': 'g.Recorder',   'key': '8'},
     {'window': 'Aurora fNIRS', 'key': 'F8'},
-    {'window': 'NIRx NIRStar', 'key': 'F8'},
+    {'window': 'NIRx NIRStar', 'key': 'F8', 'transport': 'lsl', 'value': 8},
     {'window': 'EmotivPRO',    'key': '8'},
 ]
 
@@ -36,6 +36,10 @@ def load_config_profile(profile_key: str):
     return settings, profile
 
 
+# ---------------------------------------------------------------------------
+# Built-in ENGLISH fallbacks. The live text comes from configs/strings.json
+# (selected by --language); these are only used if that file is missing a key.
+# ---------------------------------------------------------------------------
 # Instructions for letter stimulus
 LETTER_INSTRUCTIONS = [
     ['Any time you see', 'W', 'press', '[ Button ]'],
@@ -63,6 +67,24 @@ MSG_REST_OPEN   = ['Please keep your eyes open',
                    'focus on the [ + ] symbol']
 MSG_CLOSE       = ['You have completed the', 'memory exercise.', 'Please stand by.']
 
+# Active text table (populated in main() from configs/strings.json) with the
+# constants above as the fallback catalog.
+_FALLBACK = {
+    'intro':                MSG_INTRO,
+    'postrest':             MSG_POSTREST,
+    'rest_closed':          MSG_REST_CLOSED,
+    'rest_open':            MSG_REST_OPEN,
+    'close':                MSG_CLOSE,
+    'letter_instructions':  LETTER_INSTRUCTIONS,
+    'number_instructions':  NUMBER_INSTRUCTIONS,
+}
+STRINGS = {}
+
+
+def txt(key):
+    """Return localized text for `key`, falling back to the built-in English."""
+    return STRINGS.get(key, _FALLBACK.get(key))
+
 
 # Set up pygame
 def init_game(settings, profile):
@@ -88,9 +110,9 @@ def init_game(settings, profile):
 def get_instructions(stim_type):
     """Return the appropriate instructions based on stimulus type"""
     if "number" in stim_type.lower():
-        return NUMBER_INSTRUCTIONS
+        return txt('number_instructions')
     else:
-        return LETTER_INSTRUCTIONS
+        return txt('letter_instructions')
 
 
 def run_rest_states(screen, font, rest_states, rest_period, instruction_time, window_name,
@@ -106,7 +128,7 @@ def run_rest_states(screen, font, rest_states, rest_period, instruction_time, wi
             update_progress(progress_file, 0,
                             f"Starting rest state {enum+1}/{len(rest_states)}...")
 
-        instruction_msg = MSG_REST_CLOSED if state == 'closed' else MSG_REST_OPEN
+        instruction_msg = txt('rest_closed') if state == 'closed' else txt('rest_open')
         rest_display    = "" if state == 'closed' else "+"
 
         if display_message(screen, font, instruction_msg, instruction_time,
@@ -338,6 +360,8 @@ def parse_arguments():
                         help='Open the LSL marker stream (used as fallback if TTL unavailable)')
     parser.add_argument('--use_sound', action='store_true',
                         help='Enable beep sounds')
+    parser.add_argument('--language', default='en',
+                        help="UI language code from configs/strings.json (e.g. 'en', 'es')")
     return parser.parse_args()
 
 
@@ -346,8 +370,13 @@ def main():
     args = parse_arguments()
     settings, profile = load_config_profile(args.profile)
 
+    # Load the language pack for this run (overlays the built-in English fallbacks)
+    global STRINGS
+    STRINGS = load_strings(args.language, 'nback')
+
     print(f"Debug: Using profile: {args.profile}")
     print(f"Debug: Subject ID: {args.subject_id}")
+    print(f"Debug: Language: {args.language}")
     print(f"Debug: Progress file: {args.progress_file}")
     print(f"Debug: Use sound: {args.use_sound}")
 
@@ -380,7 +409,7 @@ def main():
         waiting = True
         while waiting:
             clock.tick(60)
-            display_message(screen, font, MSG_INTRO,
+            display_message(screen, font, txt('intro'),
                             width_screen=width_screen, height_screen=height_screen)
 
             if args.progress_file:
@@ -406,7 +435,7 @@ def main():
         waiting = True
         while waiting:
             clock.tick(60)
-            display_message(screen, font, MSG_POSTREST,
+            display_message(screen, font, txt('postrest'),
                             width_screen=width_screen, height_screen=height_screen)
 
             if args.progress_file:
@@ -435,7 +464,7 @@ def main():
         # -- Final clean up
         if args.progress_file:
             update_progress(args.progress_file, 99, "Finishing up...")
-        if display_message(screen, font, MSG_CLOSE, profile.get('instructions', 10000),
+        if display_message(screen, font, txt('close'), profile.get('instructions', 10000),
                            progress_file=args.progress_file,
                            status="Finishing up...",
                            progress_start=99,

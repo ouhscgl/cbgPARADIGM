@@ -1,0 +1,57 @@
+{
+    "_comment": "UI/paradigm text per language. 'en' is the source of truth; any key missing or left blank under another language falls back to 'en'. Spanish ('es') values are placeholders prefixed with [ES] - replace the text, keep the list shape (line counts) intact. Language-neutral tokens like 'W', '8', '[ Button ]', '+' are intentionally left untranslated. Saved/read as UTF-8 so accented characters (a, n, ?) are safe.",
+
+    "en": {
+        "nback": {
+            "intro":        ["WORKING MEMORY EXERCISE", "", "PLEASE GET COMFORTABLE BEFORE WE", "PERFORM BASELINE MEASUREMENTS"],
+            "postrest":     ["RESTING STATE IS COMPLETE", "ARE YOU READY?"],
+            "rest_closed":  ["Please close your eyes"],
+            "rest_open":    ["Please keep your eyes open", "focus on the [ + ] symbol"],
+            "close":        ["You have completed the", "memory exercise.", "Please stand by."],
+            "letter_instructions": [
+                ["Any time you see", "W", "press", "[ Button ]"],
+                ["Any time you see", "the same letter back to back", "press", "[ Button ]"],
+                ["Any time you see", "W", "press", "[ Button ]"],
+                ["Any time you see", "a letter that matches the second to last,", "letter that you saw", "press [ Button ]"]
+            ],
+            "number_instructions": [
+                ["Any time you see", "8", "press", "[ Button ]"],
+                ["Any time you see", "the same number back to back", "press", "[ Button ]"],
+                ["Any time you see", "8", "press", "[ Button ]"],
+                ["Any time you see", "a number that matches the second to last,", "number that you saw", "press [ Button ]"]
+            ]
+        },
+        "fingertapping": {
+            "intro":     ["SMALL MOTOR EXERCISE", "", "PLEASE GET COMFORTABLE BEFORE WE", "PERFORM BASELINE MEASUREMENTS"],
+            "countdown": "Starting in {n}...",
+            "complete":  ["You have completed the exercise.", "Please stand by."]
+        }
+    },
+
+    "es": {
+        "nback": {
+            "intro":        ["[ES] WORKING MEMORY EXERCISE", "", "[ES] PLEASE GET COMFORTABLE BEFORE WE", "[ES] PERFORM BASELINE MEASUREMENTS"],
+            "postrest":     ["[ES] RESTING STATE IS COMPLETE", "[ES] ARE YOU READY?"],
+            "rest_closed":  ["[ES] Please close your eyes"],
+            "rest_open":    ["[ES] Please keep your eyes open", "[ES] focus on the [ + ] symbol"],
+            "close":        ["[ES] You have completed the", "[ES] memory exercise.", "[ES] Please stand by."],
+            "letter_instructions": [
+                ["[ES] Any time you see", "W", "[ES] press", "[ Button ]"],
+                ["[ES] Any time you see", "[ES] the same letter back to back", "[ES] press", "[ Button ]"],
+                ["[ES] Any time you see", "W", "[ES] press", "[ Button ]"],
+                ["[ES] Any time you see", "[ES] a letter that matches the second to last,", "[ES] letter that you saw", "[ES] press [ Button ]"]
+            ],
+            "number_instructions": [
+                ["[ES] Any time you see", "8", "[ES] press", "[ Button ]"],
+                ["[ES] Any time you see", "[ES] the same number back to back", "[ES] press", "[ Button ]"],
+                ["[ES] Any time you see", "8", "[ES] press", "[ Button ]"],
+                ["[ES] Any time you see", "[ES] a number that matches the second to last,", "[ES] number that you saw", "[ES] press [ Button ]"]
+            ]
+        },
+        "fingertapping": {
+            "intro":     ["[ES] SMALL MOTOR EXERCISE", "", "[ES] PLEASE GET COMFORTABLE BEFORE WE", "[ES] PERFORM BASELINE MEASUREMENTS"],
+            "countdown": "[ES] Starting in {n}...",
+            "complete":  ["[ES] You have completed the exercise.", "[ES] Please stand by."]
+        }
+    }
+}

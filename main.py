@@ -16,6 +16,10 @@ MODE_COLORS = {
     'KEY': COLOR_DEAD,
 }
 
+# Selectable UI languages -> code consumed by paradigms / configs/strings.json
+LANGUAGES = {'English': 'en', 'Spanish': 'es'}
+
+
 # LSL stream identity. Kept stable so NIRStar and other consumers reconnect
 # automatically when the outlet hands off between control panel and paradigm.
 LSL_STREAM_NAME      = 'TriggerStream'
@@ -254,6 +258,20 @@ class ControlPanel:
             dropdown_frame, text="Play sound", variable=self.use_beep_var
         )
         self.beep_checkbox.pack(side="right")
+
+        # Language picker
+        lang_frame = ttk.Frame(button_frame)
+        lang_frame.pack(fill="x", pady=(0, 2))
+        ttk.Label(lang_frame, text="Language:",
+                  font=("TkDefaultFont", 9)).pack(side="left")
+        self.selected_language = tk.StringVar(value="English")
+        self.language_dropdown = ttk.Combobox(
+            lang_frame, textvariable=self.selected_language,
+            state="readonly", width=12
+        )
+        self.language_dropdown['values'] = list(LANGUAGES.keys())
+        self.language_dropdown.current(0)
+        self.language_dropdown.pack(side="left", padx=(4, 0))
 
         # Programs indicator
         programs_frame = ttk.Frame(button_frame)
@@ -547,10 +565,12 @@ class ControlPanel:
             self._yield_lsl_to_subprocess()
 
             # Unified flag-style args for both paradigm modules
+            language_code = LANGUAGES.get(self.selected_language.get(), 'en')
             cmd_args = [sys.executable, script_path,
                         "--subject_id",    subject,
                         "--progress_file", temp_path,
                         "--profile",       profile_key,
+                        "--language",      language_code,
                         "--use_lsl"]   # always; TriggerManager handles availability
             if self.use_beep_var.get():
                 cmd_args.append("--use_sound")

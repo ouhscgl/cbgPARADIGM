@@ -17,6 +17,29 @@ try:
 except ImportError:
     _WIN32_AVAILABLE = False
 
+def load_strings(language, paradigm):
+    """Load the text table for `paradigm` in `language` from configs/strings.json.
+    Always read as UTF-8 (Spanish accents / inverted punctuation). Any key that is
+    missing or blank under the requested language falls back to English, so a
+    half-translated table never crashes a session."""
+    cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..',
+                       'configs', 'strings.json')
+    try:
+        with open(cfg, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"load_strings: could not read strings.json ({e}); paradigm will use built-in defaults")
+        return {}
+    lang = (language or 'en').lower()
+    if lang not in data:
+        print(f"load_strings: language '{lang}' not in strings.json; falling back to 'en'")
+        lang = 'en'
+    base = dict(data.get('en', {}).get(paradigm, {}))   # English baseline
+    loc  = data.get(lang, {}).get(paradigm, {})
+    base.update({k: v for k, v in loc.items() if v not in (None, "", [])})
+    return base
+
+
 VK_MAP = {
     'F1':  0x70, 'F2':  0x71, 'F3':  0x72, 'F4':  0x73,
     'F5':  0x74, 'F6':  0x75, 'F7':  0x76, 'F8':  0x77,
@@ -55,28 +78,36 @@ def _ensure_focus(hwnd, max_attempts=20, delay_ms=50):
 
 # ---- The manager ---------------------------------------------------------- #
 class TriggerManager:
+    """Fan a trigger out to every attached modality in a single send(), each on
+    its own transport. Routing is per-program, not a single global method:
+    LSL is used only where it registers reliably (e.g. NIRStar), simulated
+    keypresses everywhere else. This restores the pre-v4.0 behavior.
+
+    Each entry in `programs` may specify:
+        window    : partial window title (keystroke / focus target)
+        key       : key to press for keystroke transport (e.g. 'F8', '8')
+        transport : 'keystroke' (default) | 'lsl' | 'ttl'
+        value     : marker value for lsl/ttl (default: send()'s `value` arg)
+
+    A program set to 'lsl'/'ttl' falls back to its `key` (keystroke) if that
+    transport isn't available, mirroring the old `if use_lsl else keystroke`.
+    """
     def __init__(self, use_lsl=True, programs=None, pulse_ms=50,
                  lsl_source_id='paradigm_triggers'):
         self.programs   = programs or []
         self._ttl_dev   = None
         self._lsl_out   = None
-        self._method    = 'none'
 
         self._init_ttl(pulse_ms)
         if use_lsl:
             self._init_lsl(lsl_source_id)
 
-        if self._ttl_dev is not None:
-            self._method = 'ttl'
-        elif self._lsl_out is not None:
-            self._method = 'lsl'
-        elif self.programs and _WIN32_AVAILABLE:
-            self._method = 'keystroke'
-
-        print(f"TriggerManager: active = {self._method.upper()} "
+        _targets = [(p.get('window'), p.get('transport', 'keystroke'))
+                    for p in self.programs]
+        print(f"TriggerManager: per-program routing "
               f"(ttl={self._ttl_dev is not None}, "
               f"lsl={self._lsl_out is not None}, "
-              f"keystroke_targets={len(self.programs)})")
+              f"targets={_targets})")
 
     def _init_ttl(self, pulse_ms):
         try:
@@ -118,79 +149,91 @@ class TriggerManager:
 
     # ---- access point for the paradigm ---------------------------------- #
     def send(self, value=8, return_focus_to=None):
-        if self._method == 'ttl':
-            try:
-                self._ttl_dev.activate_line(bitmask=int(value))
-                return 'ttl'
-            except Exception as e:
-                print(f"TriggerManager: TTL send failed ({e}); demoting")
-                self._demote_from_ttl()
-
-        if self._method == 'lsl':
-            try:
-                self._lsl_out.push_sample([int(value)])
-                return 'lsl'
-            except Exception as e:
-                print(f"TriggerManager: LSL send failed ({e}); demoting")
-                self._demote_from_lsl()
-
-        if self._method == 'keystroke':
-            self._send_keystrokes(return_focus_to)
-            return 'keystroke'
-
-        return 'none'
-
-    # ---- keystroke fallback --------------------------------------------- #
-    def _send_keystrokes(self, return_focus_to=None):
-        if not _WIN32_AVAILABLE:
-            return
+        """Fan the trigger out to every program on its own transport, in one
+        call. Returns the set of transports that actually fired."""
+        fired = set()
         for prog in self.programs:
-            window = prog.get('window', '')
-            key    = prog.get('key', 'F8')
-            vk     = VK_MAP.get(key.upper())
-            if vk is None:
-                print(f"TriggerManager: unknown key '{key}' for {window}")
-                continue
-            hwnd = _find_window_partial(window)
-            if hwnd is None:
-                print(f"TriggerManager: window '{window}' not found")
-                continue
-            try:
-                _ensure_focus(hwnd)
-                keybd_event(vk, 0, 0, 0)
-                time.sleep(0.01)
-                keybd_event(vk, 0, win32con.KEYEVENTF_KEYUP, 0)
-            except Exception as e:
-                print(f"TriggerManager: keystroke to {window} failed ({e})")
+            transport = prog.get('transport', 'keystroke').lower()
+            mval      = int(prog.get('value', value))
+
+            # ttl -> lsl -> keystroke per-program fallback
+            if transport == 'ttl':
+                if self._ttl_dev is not None and self._send_ttl(mval):
+                    fired.add('ttl');       continue
+                transport = 'lsl'           # demote this program only
+            if transport == 'lsl':
+                if self._lsl_out is not None and self._send_lsl(mval):
+                    fired.add('lsl');       continue
+                transport = 'keystroke'     # demote this program only
+            if transport == 'keystroke':
+                if self._send_keystroke_one(prog):
+                    fired.add('keystroke')
+
         if return_focus_to:
             hwnd = _find_window_partial(return_focus_to)
             if hwnd is not None:
                 _ensure_focus(hwnd)
 
-    # ---- demotion -------------------------------------------------------- #
-    def _demote_from_ttl(self):
-        if self._lsl_out is not None:
-            self._method = 'lsl'
-        elif self.programs and _WIN32_AVAILABLE:
-            self._method = 'keystroke'
-        else:
-            self._method = 'none'
-        print(f"TriggerManager: now using {self._method.upper()}")
+        return fired or {'none'}
 
-    def _demote_from_lsl(self):
-        if self.programs and _WIN32_AVAILABLE:
-            self._method = 'keystroke'
-        else:
-            self._method = 'none'
-        print(f"TriggerManager: now using {self._method.upper()}")
+    # ---- per-transport primitives --------------------------------------- #
+    def _send_ttl(self, value):
+        try:
+            self._ttl_dev.activate_line(bitmask=int(value))
+            return True
+        except Exception as e:
+            print(f"TriggerManager: TTL send failed ({e}); falling back")
+            return False
+
+    def _send_lsl(self, value):
+        try:
+            self._lsl_out.push_sample([int(value)])
+            return True
+        except Exception as e:
+            print(f"TriggerManager: LSL send failed ({e}); falling back")
+            return False
+
+    def _send_keystroke_one(self, prog):
+        if not _WIN32_AVAILABLE:
+            return False
+        window = prog.get('window', '')
+        key    = prog.get('key', 'F8')
+        vk     = VK_MAP.get(key.upper())
+        if vk is None:
+            print(f"TriggerManager: unknown key '{key}' for {window}")
+            return False
+        hwnd = _find_window_partial(window)
+        if hwnd is None:
+            print(f"TriggerManager: window '{window}' not found")
+            return False
+        try:
+            _ensure_focus(hwnd)
+            keybd_event(vk, 0, 0, 0)
+            time.sleep(0.01)
+            keybd_event(vk, 0, win32con.KEYEVENTF_KEYUP, 0)
+            return True
+        except Exception as e:
+            print(f"TriggerManager: keystroke to {window} failed ({e})")
+            return False
 
     # ---- introspection (for the future UI indicators) ------------------- #
+    def _resolved_transport(self, prog):
+        """What this program will actually use given current availability."""
+        t = prog.get('transport', 'keystroke').lower()
+        if t == 'ttl' and self._ttl_dev is None:
+            t = 'lsl'
+        if t == 'lsl' and self._lsl_out is None:
+            t = 'keystroke'
+        return t
+
     def status(self):
+        resolved = sorted({self._resolved_transport(p) for p in self.programs})
         return {
             'ttl_available':  self._ttl_dev is not None,
             'lsl_available':  self._lsl_out is not None,
-            'active_method':  self._method,
-            'programs':       [p.get('window') for p in self.programs],
+            'active_method':  '+'.join(resolved) if resolved else 'none',
+            'programs':       [(p.get('window'), self._resolved_transport(p))
+                               for p in self.programs],
         }
 
     # ---- cleanup -------------------------------------------------------- #

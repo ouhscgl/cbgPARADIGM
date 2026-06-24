@@ -8,7 +8,7 @@ script_dir = Path(__file__).resolve().parent
 parent_dir = script_dir.parent
 sys.path.insert(0, str(parent_dir))
 from auxfunc.paradigm_utils import (
-    update_progress, check_for_quit, display_message, play_audio, TriggerManager, resolve_display
+    update_progress, check_for_quit, display_message, play_audio, TriggerManager, resolve_display, load_strings
 )
 
 
@@ -17,7 +17,7 @@ from auxfunc.paradigm_utils import (
 DEFAULT_KEYSTROKE_PROGRAMS = [
     {'window': 'g.Recorder',   'key': '8'},
     {'window': 'Aurora fNIRS', 'key': 'F8'},
-    {'window': 'NIRx NIRStar', 'key': 'F8'},
+    {'window': 'NIRx NIRStar', 'key': 'F8', 'transport': 'lsl', 'value': 8},
     {'window': 'EmotivPRO',    'key': '8'},
 ]
 
@@ -34,9 +34,26 @@ def load_config_profile(profile_key: str):
     return settings, profile
 
 
-# -- messages
-MSG_INTRO = ['SMALL MOTOR EXERCISE', '', 'PLEASE GET COMFORTABLE BEFORE WE',
-             'PERFORM BASELINE MEASUREMENTS']
+# ---------------------------------------------------------------------------
+# Built-in ENGLISH fallbacks; live text comes from configs/strings.json
+# (selected by --language). Used only if a key is missing from that file.
+# ---------------------------------------------------------------------------
+MSG_INTRO     = ['SMALL MOTOR EXERCISE', '', 'PLEASE GET COMFORTABLE BEFORE WE',
+                 'PERFORM BASELINE MEASUREMENTS']
+MSG_COUNTDOWN = 'Starting in {n}...'
+MSG_COMPLETE  = ['You have completed the exercise.', 'Please stand by.']
+
+_FALLBACK = {
+    'intro':     MSG_INTRO,
+    'countdown': MSG_COUNTDOWN,
+    'complete':  MSG_COMPLETE,
+}
+STRINGS = {}
+
+
+def txt(key):
+    """Return localized text for `key`, falling back to the built-in English."""
+    return STRINGS.get(key, _FALLBACK.get(key))
 
 
 def parse_arguments():
@@ -51,6 +68,8 @@ def parse_arguments():
                         help='Open the LSL marker stream (used as fallback if TTL unavailable)')
     parser.add_argument('--use_sound', action='store_true',
                         help='Enable beep sounds')
+    parser.add_argument('--language', default='en',
+                        help="UI language code from configs/strings.json (e.g. 'en', 'es')")
     return parser.parse_args()
 
 
@@ -58,6 +77,10 @@ def main():
     # Setup paradigm
     args = parse_arguments()
     settings, profile = load_config_profile(args.profile)
+
+    # Load the language pack for this run (overlays built-in English fallbacks)
+    global STRINGS
+    STRINGS = load_strings(args.language, 'fingertapping')
 
     # Get values from configs
     display_config = settings.get('display', {})
@@ -71,12 +94,14 @@ def main():
     task_duration      = profile.get('task_duration',  10000)
     rest_duration      = profile.get('rest_duration',  15000)
     resting_state      = profile.get('resting_state',  60000)
+    standby_duration   = profile.get('standby_duration', task_duration)
     repetitions        = profile.get('repetitions',
                                      ['left', 'right', 'left', 'right', 'left', 'right'])
     keystroke_programs = profile.get('keystroke_programs', DEFAULT_KEYSTROKE_PROGRAMS)
 
     print(f"Debug: Using profile: {args.profile}")
     print(f"Debug: Subject ID: {args.subject_id}")
+    print(f"Debug: Language: {args.language}")
 
     # Initialize unified trigger dispatcher (cascade: TTL -> LSL -> keystrokes)
     trigger = TriggerManager(use_lsl=args.use_lsl, programs=keystroke_programs)
@@ -93,7 +118,7 @@ def main():
 
         # Lobby 01: Welcome screen
         screen.fill((0, 0, 0))
-        display_message(screen, font, MSG_INTRO,
+        display_message(screen, font, txt('intro'),
                         width_screen=width_screen, height_screen=height_screen)
         pygame.display.flip()
 
@@ -141,7 +166,7 @@ def main():
         # Initial 3-second countdown
         for i in range(3, 0, -1):
             screen.fill((0, 0, 0))
-            display_message(screen, font, f"Starting in {i}...",
+            display_message(screen, font, txt('countdown').format(n=i),
                             width_screen=width_screen, height_screen=height_screen)
             pygame.display.flip()
             if play_audio(audio_path / f'countdown_{i}.mp3'):
@@ -206,13 +231,14 @@ def main():
             update_progress(args.progress_file, 95, "Sequence complete")
 
         screen.fill((0, 0, 0))
-        display_message(screen, font, "You have completed the exercise.",
+        _complete = txt('complete')
+        display_message(screen, font, _complete[0],
                         width_screen=width_screen, height_screen=height_screen)
-        display_message(screen, font, "Please stand by.",
+        display_message(screen, font, _complete[1] if len(_complete) > 1 else "",
                         position=(width_screen // 2, height_screen // 2 + 80),
                         width_screen=width_screen, height_screen=height_screen)
         pygame.display.flip()
-        pygame.time.wait(task_duration)
+        pygame.time.wait(standby_duration)
 
         if args.progress_file:
             active = trigger.status()['active_method'].upper()
