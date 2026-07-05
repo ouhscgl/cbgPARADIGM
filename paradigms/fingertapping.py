@@ -8,7 +8,7 @@ script_dir = Path(__file__).resolve().parent
 parent_dir = script_dir.parent
 sys.path.insert(0, str(parent_dir))
 from auxfunc.paradigm_utils import (
-    update_progress, check_for_quit, display_message, play_audio, TriggerManager, resolve_display, load_strings
+    update_progress, check_for_quit, display_message, play_audio, wait_period, TriggerManager, resolve_display, load_strings
 )
 
 
@@ -194,16 +194,17 @@ def main():
 
             trigger.send(value=8, return_focus_to=window_name)
 
-            if display_message(screen, font, direction.upper(), task_duration, custom_font_size=300,
-                               progress_file=args.progress_file,
-                               status=f"Fingertapping {direction.upper()} ({rep_idx+1}/{len(repetitions)})",
-                               progress_start=base_progress,
-                               progress_end=base_progress + (progress_per_rep * 0.5),
-                               width_screen=width_screen,
-                               height_screen=height_screen):
-                return
-
+            # Refresh the screen to the cue, then fire the audio at the same moment
+            # (mirrors the countdown block), and only THEN hold for the task period.
+            display_message(screen, font, direction.upper(), custom_font_size=300,
+                            width_screen=width_screen, height_screen=height_screen)
             if play_audio(str(audio_path / f"{direction.upper()}.mp3")):
+                return
+            if wait_period(screen, task_duration,
+                           progress_file=args.progress_file,
+                           status=f"Fingertapping {direction.upper()} ({rep_idx+1}/{len(repetitions)})",
+                           progress_start=base_progress,
+                           progress_end=base_progress + (progress_per_rep * 0.5)):
                 return
 
             # ========== REST PHASE ==========
@@ -214,16 +215,16 @@ def main():
 
             trigger.send(value=8, return_focus_to=window_name)
 
-            if display_message(screen, font, "", rest_duration, custom_font_size=300,
-                               progress_file=args.progress_file,
-                               status=f"Resting after {direction.upper()} ({rep_idx+1}/{len(repetitions)})",
-                               progress_start=rest_progress,
-                               progress_end=base_progress + progress_per_rep,
-                               width_screen=width_screen,
-                               height_screen=height_screen):
-                return
-
+            # Blank the screen and say STOP together, then hold for the rest period.
+            display_message(screen, font, "", custom_font_size=300,
+                            width_screen=width_screen, height_screen=height_screen)
             if play_audio(str(audio_path / "STOP.mp3")):
+                return
+            if wait_period(screen, rest_duration,
+                           progress_file=args.progress_file,
+                           status=f"Resting after {direction.upper()} ({rep_idx+1}/{len(repetitions)})",
+                           progress_start=rest_progress,
+                           progress_end=base_progress + progress_per_rep):
                 return
 
         # Terminate
