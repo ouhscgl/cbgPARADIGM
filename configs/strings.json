@@ -1,6 +1,4 @@
 {
-    "_comment": "UI/paradigm text per language. 'en' is the source of truth; any key missing or left blank under another language falls back to 'en'. Spanish ('es') values are placeholders prefixed with [ES] - replace the text, keep the list shape (line counts) intact. Language-neutral tokens like 'W', '8', '[ Button ]', '+' are intentionally left untranslated. Saved/read as UTF-8 so accented characters (a, n, ?) are safe.",
-
     "en": {
         "nback": {
             "intro":        ["WORKING MEMORY EXERCISE", "", "PLEASE GET COMFORTABLE BEFORE WE", "PERFORM BASELINE MEASUREMENTS"],
@@ -30,28 +28,28 @@
 
     "es": {
         "nback": {
-            "intro":        ["[ES] WORKING MEMORY EXERCISE", "", "[ES] PLEASE GET COMFORTABLE BEFORE WE", "[ES] PERFORM BASELINE MEASUREMENTS"],
-            "postrest":     ["[ES] RESTING STATE IS COMPLETE", "[ES] ARE YOU READY?"],
-            "rest_closed":  ["[ES] Please close your eyes"],
-            "rest_open":    ["[ES] Please keep your eyes open", "[ES] focus on the [ + ] symbol"],
-            "close":        ["[ES] You have completed the", "[ES] memory exercise.", "[ES] Please stand by."],
+            "intro":        ["EJERCICIO DE MEMORIA DE TRABAJO", "", "POR FAVOR", "PÓNGASE CÓMODO ANTES DE QUE"],
+            "postrest":     ["EL ESTADO DE REPOSO SE HA COMPLETADO", "¿ESTÁ LISTO?"],
+            "rest_closed":  ["Por favor, cierre los ojos."],
+            "rest_open":    ["Por favor, mantenga los ojos abiertos y", "fíjese en el símbolo [ + ]"],
+            "close":        ["Ha completado el", "ejercicio de memoria.","Por favor, espere."],
             "letter_instructions": [
-                ["[ES] Any time you see", "W", "[ES] press", "[ Button ]"],
-                ["[ES] Any time you see", "[ES] the same letter back to back", "[ES] press", "[ Button ]"],
-                ["[ES] Any time you see", "W", "[ES] press", "[ Button ]"],
-                ["[ES] Any time you see", "[ES] a letter that matches the second to last,", "[ES] letter that you saw", "[ES] press [ Button ]"]
+                ["Cada vez que veas", "W", "presiona", "[ Botón ]"],
+                ["Cada vez que veas", "la misma letra dos veces seguidas", "presiona", "[ Botón ]"],
+                ["Cada vez que veas", "W", "presiona", "[ Botón ]"],
+                ["Cada vez que veas", "una letra que coincida con la penúltima,", "letra que viste", "presiona [ Botón ]"]
             ],
             "number_instructions": [
-                ["[ES] Any time you see", "8", "[ES] press", "[ Button ]"],
-                ["[ES] Any time you see", "[ES] the same number back to back", "[ES] press", "[ Button ]"],
-                ["[ES] Any time you see", "8", "[ES] press", "[ Button ]"],
-                ["[ES] Any time you see", "[ES] a number that matches the second to last,", "[ES] number that you saw", "[ES] press [ Button ]"]
+                ["Cada vez que veas", "8", "presiona", "[ Botón ]"],
+                ["Cada vez que veas", "el mismo número dos veces seguidas", "presiona", "[ Botón ]"],
+                ["Cada vez que veas", "8", "presiona", "[ Botón ]"],
+                ["Cada vez que veas", "un número que coincida con el penúltimo", "número que viste", "presiona [ Botón ]"]
             ]
         },
         "fingertapping": {
-            "intro":     ["[ES] SMALL MOTOR EXERCISE", "", "[ES] PLEASE GET COMFORTABLE BEFORE WE", "[ES] PERFORM BASELINE MEASUREMENTS"],
-            "countdown": "[ES] Starting in {n}...",
-            "complete":  ["[ES] You have completed the exercise.", "[ES] Please stand by."]
+            "intro":     ["EJERCICIO DE MOTRICIDAD FINA", "", "POR FAVOR", "PÓNGASE CÓMODO ANTES DE QUE"],
+            "countdown": "Comenzado en {n}...",
+            "complete":  ["Ha completado el", "ejercicio de memoria.","Por favor, espere."]
         }
     }
 }
