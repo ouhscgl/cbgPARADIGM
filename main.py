@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import subprocess, sys, os, json, tempfile, gc, time
 
-
+# Comment
 # Color palette for indicators
 COLOR_OK   = "#2ecc71"   # green: available / connected / owned
 COLOR_WARN = "#f39c12"   # amber: usable but not primary, or transferred
