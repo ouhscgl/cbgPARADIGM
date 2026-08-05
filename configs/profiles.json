@@ -87,6 +87,21 @@
             {"window": "g.Recorder",   "key": "8" }
         ]
     },
+    "LTIA_number_tcd"       : {
+        "display_name"      : "LTIA: Nback (numbers, TCD)",
+        "module"            : "nback.py",
+        "stim_type"         : "number_stimulus.csv",
+        "rest_period"       : 60000,
+        "instructions"      : 10000,
+        "stim_presentation" : 500,
+        "stim_cooldown"     : 1500,
+        "rest_states"       : ["open"],
+        "appendix"          : "_NIR_EEG_COG_NUMBER",
+        "keystroke_programs": [
+            {"window": "Aurora fNIRS", "key": "F8"},
+            {"window": "g.Recorder",   "key": "8" }
+        ]
+    },
     "LTMC_letter"           : {
         "display_name"      : "LTMC: Nback (letters)",
         "module"            : "nback.py",
