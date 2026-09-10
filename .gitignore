@@ -1,0 +1,9 @@
+# Run and crash logs written by auxfunc/crashlog.py
+logs/
+
+# Python bytecode caches
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
