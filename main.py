@@ -14,12 +14,17 @@ COLOR_WARN = "#f39c12"   # amber: usable but not primary, or transferred
 COLOR_BAD  = "#95a5a6"   # gray:  unavailable
 COLOR_DEAD = "#e74c3c"   # red:   fallback active / error
 
-# Mode -> color for the top-level mode indicator
-MODE_COLORS = {
-    'TTL': COLOR_OK,
-    'LSL': COLOR_WARN,
-    'KEY': COLOR_DEAD,
-}
+# Hard-coded NIRStar / Aurora recording comments. The control panel copies
+# these to the clipboard so the operator can paste them into the acquisition
+# software without retyping them for every run.
+NBACK_COMMENT = (
+    "PRFMOT16X16 with SDC at D17\n"
+    "baseline, short nback with letters"
+)
+FINGERTAP_COMMENT = (
+    "PRFMOT16X16 with SDC at D17\n"
+    "baseline, fingertapping"
+)
 
 # Selectable UI languages -> code consumed by paradigms / configs/strings.json
 LANGUAGES = {'English': 'en', 'Spanish': 'es'}
@@ -208,6 +213,7 @@ class ControlPanel:
         # Probe capabilities and decide cascade-winning mode
         self.capabilities = probe_capabilities()
         self.active_mode  = determine_mode(self.capabilities)
+        self.log.log(f"Marker mode: {self.active_mode} (capabilities: {self.capabilities})")
 
         # LSL outlet handle. The control panel owns this for the whole session:
         # it is created once, below, and destroyed only when the application
@@ -238,27 +244,23 @@ class ControlPanel:
         )
         self.export_button.pack(side="right")
 
-        # Mode indicator (replaces old LSL checkbox area)
-        mode_frame = ttk.Frame(recording_frame)
-        mode_frame.pack(fill="x", pady=(4, 0))
+        # Recording comments. The marker mode used to be shown here; the
+        # TTL / LSL / KEY indicators at the bottom of the panel already say
+        # which one is active, so the space goes to the clipboard buttons.
+        comment_frame = ttk.Frame(recording_frame)
+        comment_frame.pack(fill="x", pady=(4, 0))
 
-        self.mode_dot = tk.Label(
-            mode_frame, text="●",
-            foreground=MODE_COLORS[self.active_mode],
-            font=("TkDefaultFont", 14)
+        self.nb_comment_button = ttk.Button(
+            comment_frame, text="NB comment",
+            command=lambda: self.copy_comment('nback')
         )
-        self.mode_dot.pack(side="left")
-        self.mode_label = tk.Label(
-            mode_frame, text=f"{self.active_mode} mode",
-            font=("TkDefaultFont", 10, "bold")
-        )
-        self.mode_label.pack(side="left", padx=(2, 0))
+        self.nb_comment_button.pack(side="left", fill="x", expand=True, padx=(0, 3))
 
-        self.marker_label = tk.Label(
-            mode_frame, text="", font=("TkDefaultFont", 9),
-            foreground="#555555"
+        self.ft_comment_button = ttk.Button(
+            comment_frame, text="FT comment",
+            command=lambda: self.copy_comment('fingertapping')
         )
-        self.marker_label.pack(side="right")
+        self.ft_comment_button.pack(side="left", fill="x", expand=True, padx=(3, 0))
 
         # ---- Experiment Selection --------------------------------------- #
         button_frame = ttk.LabelFrame(main_frame, text="Experiment Selection", padding="10")
@@ -301,6 +303,19 @@ class ControlPanel:
         self.language_dropdown['values'] = list(LANGUAGES.keys())
         self.language_dropdown.current(0)
         self.language_dropdown.pack(side="left", padx=(4, 0))
+
+        # Keep the panel above the paradigm window, which pulls itself to the
+        # foreground on a timer while a run is in progress.
+        self.always_on_top = tk.BooleanVar(
+            value=bool(self.panel_config.get('always_on_top', False))
+        )
+        self.topmost_check = ttk.Checkbutton(
+            lang_frame, text="On top", variable=self.always_on_top,
+            command=self.toggle_always_on_top
+        )
+        self.topmost_check.pack(side="right")
+        if self.always_on_top.get():
+            self.toggle_always_on_top()
 
         # Programs indicator
         programs_frame = ttk.Frame(button_frame)
@@ -371,6 +386,12 @@ class ControlPanel:
         self._key_dot = self._make_cap_indicator(cap_frame, "KEY",
                                                  COLOR_OK if self.capabilities['key'] else COLOR_BAD)
 
+        self.marker_label = tk.Label(
+            cap_frame, text="", font=("TkDefaultFont", 9),
+            foreground="#555555"
+        )
+        self.marker_label.pack(side="right")
+
         self.log_label = ttk.Label(
             main_frame, text=f"Logs: {self.log_dir}",
             font=("TkDefaultFont", 8), foreground="#777777"
@@ -411,6 +432,52 @@ class ControlPanel:
     def _set_lsl_dot(self, color):
         if hasattr(self, '_lsl_dot') and self._lsl_dot is not None:
             self._lsl_dot.config(foreground=color)
+
+    def toggle_always_on_top(self):
+        """Pin / unpin the control panel above every other window."""
+        on = bool(self.always_on_top.get())
+        try:
+            self.root.attributes('-topmost', on)
+        except Exception as e:
+            self.log.error(f"ControlPanel: could not set always-on-top -> {e}")
+            self.always_on_top.set(not on)          # leave the box telling the truth
+            return
+        self.log.log(f"Always-on-top {'enabled' if on else 'disabled'}")
+
+    def copy_comment(self, which):
+        """Copy the hard-coded recording comment for `which` to the clipboard."""
+        text, button = {
+            'nback':         (NBACK_COMMENT,     self.nb_comment_button),
+            'fingertapping': (FINGERTAP_COMMENT, self.ft_comment_button),
+        }[which]
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            # Hand the selection over to the window manager right away, so the
+            # text is pastable even if the panel is busy afterwards.
+            self.root.update()
+        except Exception as e:
+            self.log.error(f"ControlPanel: clipboard copy failed -> {e}")
+            messagebox.showerror("Copy failed",
+                                 f"Could not copy the comment to the clipboard:\n{e}")
+            return
+        self.log.log(f"Copied {which} recording comment to clipboard")
+        self._flash_button(button)
+
+    def _flash_button(self, button, restore_after=1200):
+        """Confirm on the button itself, then put its own label back."""
+        original = getattr(button, '_flash_original', None) or button.cget('text')
+        job = getattr(button, '_flash_job', None)
+        if job:
+            self.root.after_cancel(job)
+        button._flash_original = original
+        button.config(text="Copied ✓")
+
+        def restore():
+            button._flash_job = None
+            button.config(text=button._flash_original)
+
+        button._flash_job = self.root.after(restore_after, restore)
 
     def on_paradigm_change(self, event=None):
         """Refresh the programs label when the selected paradigm changes."""

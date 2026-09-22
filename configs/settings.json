@@ -14,6 +14,7 @@
     "control_panel": {
         "window_name"       : "Paradigm Setup",
         "window_position"   : [50, 450],
-        "window_size"       : [400, 545]
+        "window_size"       : [400, 545],
+        "always_on_top"     : false
     }
 }
