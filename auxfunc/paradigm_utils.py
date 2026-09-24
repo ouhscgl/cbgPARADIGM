@@ -19,13 +19,16 @@ except ImportError:                                   # pragma: no cover
     from marker_relay import MarkerRelayClient, lsl_clock
 
 # Windows keypress imports
+# Exception, not ImportError: these pull in native libraries, and a present but
+# unloadable one raises OSError. Falling back to "no keystrokes" is a degraded
+# run; letting it propagate is no run at all.
 try:
     import win32gui
     import win32con
     from win32api import keybd_event
     import pyautogui
     _WIN32_AVAILABLE = True
-except ImportError:
+except Exception:
     _WIN32_AVAILABLE = False
 
 
@@ -196,6 +199,13 @@ class TriggerManager:
         except ImportError:
             self._log.log("TriggerManager: pyxid2 not installed; skipping TTL")
             return
+        except Exception as e:
+            # pyxid2 loads the FTDI driver at import time, so a missing or
+            # broken libftd2xx raises OSError here -- not ImportError. Unguarded
+            # that killed the paradigm before the first screen ever appeared.
+            self._log.warn(f"TriggerManager: pyxid2 could not load ({e}); "
+                           f"skipping TTL")
+            return
         try:
             devices = pyxid2.get_xid_devices()
             if not devices:
@@ -215,6 +225,11 @@ class TriggerManager:
             import pylsl
         except ImportError:
             self._log.log("TriggerManager: pylsl not installed; skipping LSL")
+            return
+        except Exception as e:
+            # Same trap as pyxid2: pylsl dlopens liblsl on import.
+            self._log.warn(f"TriggerManager: pylsl could not load ({e}); "
+                           f"skipping LSL")
             return
         try:
             info = pylsl.StreamInfo(
@@ -595,15 +610,52 @@ def ensure_window_focus(window_handle, max_attempts=3, delay_ms=20,
     return False
 
 
-def update_progress(progress_file, progress, status):
-    """Update progress file with current progress and status"""
+# Progress is reported WITHIN the current segment -- a rest state, a block --
+# not within the whole run. A 300 s rest crawling across 2% of a run-wide bar
+# tells the operator nothing; the same rest filling its own bar tells them
+# exactly where they are. The segment counter carries the run-level context.
+_segment_state = {'name': None, 'index': 0, 'total': 0}
+
+
+def set_segment(name=None, index=0, total=0):
+    """Name the segment that later update_progress() calls belong to.
+
+    `index` is 1-based. index=0 means "no segment yet" (setup, teardown), and
+    the control panel then shows the percentage without a counter.
+    """
+    _segment_state['name']  = name
+    _segment_state['index'] = int(index)
+    _segment_state['total'] = int(total)
+
+
+def current_segment():
+    """(name, index, total) of the segment being reported."""
+    return (_segment_state['name'], _segment_state['index'],
+            _segment_state['total'])
+
+
+def update_progress(progress_file, progress, status, done=False):
+    """Update progress file with current progress and status
+
+    `done=True` is the paradigm saying the run itself is over. The control
+    panel used to infer that from progress >= 99.9, which stopped being a safe
+    inference once every segment reaches 100 on its own.
+    """
     if not progress_file:
         return
     try:
+        value = progress
+        # Negative is the crash sentinel and is passed through untouched.
+        if isinstance(value, (int, float)) and value >= 0:
+            value = round(min(100.0, max(0.0, float(value))), 2)
         with open(progress_file, 'w') as f:
             json.dump({
-                "progress": progress,
-                "status": status
+                "progress":      value,
+                "status":        status,
+                "segment":       _segment_state['name'],
+                "segment_index": _segment_state['index'],
+                "segment_total": _segment_state['total'],
+                "done":          bool(done),
             }, f)
     except Exception as e:
         print(f"Error updating progress: {e}")

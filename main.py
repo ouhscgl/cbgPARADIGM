@@ -1,10 +1,13 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-import subprocess, sys, os, json, tempfile, gc, time
+import argparse, subprocess, sys, os, json, tempfile, gc, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from auxfunc import crashlog
 from auxfunc.marker_relay import MarkerRelayServer
+from auxfunc.config import load_config, applied_overlays
+from auxfunc import fleet, version
+from auxfunc.perf_stream import default_path as perf_file_for
 from auxfunc.paradigm_utils import write_skip_command
 
 # Comment
@@ -50,16 +53,11 @@ LSL_SOURCE_ID        = 'paradigm_triggers'
 # Configuration Loading
 # ----------------------------------------------------------------------------
 def load_configuration(filename):
+    """Shared config plus this machine's optional <name>.local.json overlay."""
     try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-    except:
-        script_dir = os.curdir
-    config_path = os.path.join(script_dir, 'configs', filename)
-    try:
-        with open(config_path, 'r') as f:
-            return json.load(f)
+        return load_config(filename)
     except FileNotFoundError:
-        print(f"Warning: {config_path} not found")
+        print(f"Warning: configs/{filename} not found")
         return {}
     except json.JSONDecodeError as e:
         print(f"Error parsing settings.json: {e}")
@@ -182,7 +180,7 @@ class ExportResultsWindow:
 # Control Panel
 # ----------------------------------------------------------------------------
 class ControlPanel:
-    def __init__(self, root):
+    def __init__(self, root, dry_run=False):
         # Load configs
         self.settings = load_configuration('settings.json')
         self.profiles = load_configuration('profiles.json')
@@ -192,19 +190,53 @@ class ControlPanel:
 
         # Window setup
         self.root = root
-        self.root.title(self.settings['control_panel']['window_name'])
+        self.app_version = version.describe()
+        window_title = self.settings['control_panel']['window_name']
+        window_title += f"  ·  {self.app_version}"
+        if dry_run:
+            window_title += "  —  DRY RUN"
+        self.root.title(window_title)
 
         self.display_config = self.settings.get('display',       {})
         self.paths_config   = self.settings.get('paths',         {})
         self.panel_config   = self.settings.get('control_panel', {})
 
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.log_dir    = crashlog.resolve_log_dir(self.paths_config.get('log_dir'))
+
+        # Dry run: a throwaway session for testing the software itself. Every
+        # file this run produces -- panel log, run log, trial feed -- goes in
+        # one folder under the OS temp directory, and no results are written
+        # anywhere. Nothing lands beside the repo or in project_root.
+        self.dry_run = bool(dry_run)
+        if self.dry_run:
+            self.log_dir = crashlog.resolve_log_dir(
+                os.path.join(tempfile.gettempdir(),
+                             f"cbgPARADIGM-dryrun-{time.strftime('%Y%m%d_%H%M%S')}"))
+        else:
+            self.log_dir = crashlog.resolve_log_dir(self.paths_config.get('log_dir'))
         self.log        = crashlog.install('control_panel', log_dir=self.log_dir)
         self.log.log(f"Log directory: {self.log_dir}")
 
-        window_size = self.panel_config.get('window_size',    [400, 500])
+        # Build identity, first thing in every log: a bug report that names a
+        # version is worth ten that describe symptoms.
+        build = version.details()
+        self.log.log(f"cbgPARADIGM {build['version']} "
+                     f"(branch {build['branch'] or '?'}, {build['source']})"
+                     + ("  *** LOCAL EDITS ***" if build['dirty'] else ""))
+        for overlay in applied_overlays():
+            self.log.log(f"Config overlay applied: {overlay}")
+
+        # Tell the shared folder which build this machine is on. Background
+        # thread: a mapped drive that has gone away must not delay startup.
+        if not self.dry_run:
+            fleet.report(fleet.resolve_fleet_dir(self.settings),
+                         app='control_panel', logger=self.log,
+                         extra={'log_dir': self.log_dir})
+
+        window_size = list(self.panel_config.get('window_size',    [400, 500]))
         window_pos  = self.panel_config.get('window_position', [50, 450])
+        if self.dry_run:
+            window_size[1] += 40          # room for the dry-run banner
         self.root.geometry(f"{window_size[0]}x{window_size[1]}")
         self.root.geometry(f"+{window_pos[0]}+{window_pos[1]}")
 
@@ -229,6 +261,16 @@ class ControlPanel:
         main_frame = ttk.Frame(root, padding="10")
         main_frame.pack(fill="both", expand=True)
 
+        if self.dry_run:
+            tk.Label(main_frame,
+                     text=f"DRY RUN — no results are saved.\nEverything goes to "
+                          f"{self.log_dir}",
+                     background=COLOR_WARN, foreground="#ffffff",
+                     font=("TkDefaultFont", 9, "bold"), justify="left",
+                     anchor="w", padx=6, pady=3,
+                     wraplength=(window_size[0] - 40)).pack(fill="x", padx=5,
+                                                            pady=(0, 6))
+
         # ---- Recording Information --------------------------------------- #
         recording_frame = ttk.LabelFrame(main_frame, text="Recording Information", padding="10")
         recording_frame.pack(fill="x", padx=5, pady=5)
@@ -239,6 +281,8 @@ class ControlPanel:
         subject_frame.pack(fill="x", pady=5)
         self.subject_id = ttk.Entry(subject_frame)
         self.subject_id.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        if self.dry_run:
+            self.subject_id.insert(0, "DRYRUN")
         self.export_button = ttk.Button(
             subject_frame, text="Export", command=self.export_data, width=6
         )
@@ -368,6 +412,13 @@ class ControlPanel:
         self.skip_button.pack(side="right")
         self.skip_button.state(['disabled'])
 
+        # Opens the live performance view in its own process. Read-only and
+        # entirely optional: the paradigm writes the trial file either way.
+        self.perf_button = ttk.Button(
+            pct_frame, text="Monitor", command=self.open_perf_monitor, width=9
+        )
+        self.perf_button.pack(side="right", padx=(0, 4))
+
         # ---- Bottom: termination hint + capability indicators ----------- #
         self.termination_label = ttk.Label(
             main_frame,
@@ -393,7 +444,7 @@ class ControlPanel:
         self.marker_label.pack(side="right")
 
         self.log_label = ttk.Label(
-            main_frame, text=f"Logs: {self.log_dir}",
+            main_frame, text=f"{self.app_version}  ·  Logs: {self.log_dir}",
             font=("TkDefaultFont", 8), foreground="#777777"
         )
         self.log_label.pack(fill="x", pady=(4, 0))
@@ -403,6 +454,9 @@ class ControlPanel:
         self.process_meta      = {}
         self.temp_file         = None
         self.command_file      = None
+        # Trial feed for the performance monitor. Kept after the run ends so
+        # the button still opens the last run rather than an empty picker.
+        self.perf_file         = None
         self._run_log_handle   = None
         self.progress_complete = False     # paradigm reported 100%
         self.last_status       = ""
@@ -432,6 +486,17 @@ class ControlPanel:
     def _set_lsl_dot(self, color):
         if hasattr(self, '_lsl_dot') and self._lsl_dot is not None:
             self._lsl_dot.config(foreground=color)
+
+    @staticmethod
+    def _format_progress(progress, segment_index=0, segment_total=0):
+        """'43.21%' on its own, '43.21% · segment 3/6' while a run is in progress."""
+        try:
+            text = f"{float(progress):.2f}%"
+        except (TypeError, ValueError):
+            return "—"
+        if segment_index and segment_total:
+            text += f" · segment {segment_index}/{segment_total}"
+        return text
 
     def toggle_always_on_top(self):
         """Pin / unpin the control panel above every other window."""
@@ -695,6 +760,40 @@ class ControlPanel:
             messagebox.showerror("Error", f"Could not start tutorial: {str(e)}")
 
     # ---- Fast-forward -------------------------------------------------- #
+    def open_perf_monitor(self):
+        """Launch the live performance view as its own process.
+
+        Separate process on purpose: it only reads the trial file, so nothing
+        it does -- redrawing, resizing, being closed -- can reach the paradigm.
+        """
+        script = os.path.join(self.script_dir, 'auxfunc', 'perf_monitor.py')
+        if not os.path.exists(script):
+            messagebox.showerror("Monitor not found", f"Missing:\n{script}")
+            return
+
+        args = [sys.executable, script]
+        if self.perf_file and os.path.exists(self.perf_file):
+            args += ["--file", self.perf_file]
+        else:
+            args += ["--start-dir", self.log_dir]
+
+        # Park it immediately to the right of this window.
+        try:
+            self.root.update_idletasks()
+            x = self.root.winfo_x() + self.root.winfo_width() + 12
+            y = self.root.winfo_y()
+            args += ["--geometry", f"460x300+{max(0, x)}+{max(0, y)}"]
+        except Exception:
+            pass
+
+        try:
+            subprocess.Popen(args, cwd=self.script_dir,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            self.log.log(f"Performance monitor launched: {' '.join(args[1:])}")
+        except Exception as e:
+            self.log.error(f"could not launch the performance monitor -> {e}")
+            messagebox.showerror("Monitor failed to start", str(e))
+
     def skip_segment(self):
         """Ask the running paradigm to end its current segment."""
         if not (self.process and self.process.poll() is None):
@@ -786,6 +885,9 @@ class ControlPanel:
             self._run_log_handle = open(run_log_path, 'a', buffering=1,
                                         encoding='utf-8', errors='replace')
 
+            # Per-trial performance feed, beside the run log.
+            self.perf_file = perf_file_for(run_log_path)
+
             # Unified flag-style args for both paradigm modules
             language_code = LANGUAGES.get(self.selected_language.get(), 'en')
             cmd_args = [sys.executable, "-u", script_path,
@@ -795,7 +897,10 @@ class ControlPanel:
                         "--log_file",      run_log_path,
                         "--profile",       profile_key,
                         "--language",      language_code,
+                        "--perf_file",     self.perf_file,
                         "--use_lsl"]   # always; TriggerManager handles availability
+            if self.dry_run:
+                cmd_args.append("--dry_run")
             if self._marker_port:
                 cmd_args += ["--marker_port", str(self._marker_port)]
             if self.use_beep_var.get():
@@ -819,7 +924,7 @@ class ControlPanel:
             self.experiment_dropdown.state(['disabled'])
             self.skip_button.state(['!disabled'])
             self.status_label.config(text=f"Experiment '{experiment_name}' started...")
-            self.percentage_label.config(text="0%")
+            self.percentage_label.config(text=self._format_progress(0))
             self.progress_var.set(0)
 
         except Exception as e:
@@ -851,6 +956,18 @@ class ControlPanel:
                         data = json.load(f)
                         progress = data.get("progress", 0)
                         status   = data.get("status", "Running...")
+                        seg_index = data.get("segment_index", 0) or 0
+                        seg_total = data.get("segment_total", 0) or 0
+
+                        # Each segment now fills its own 0-100 bar, so reaching
+                        # 100 no longer means the run is over -- the paradigm
+                        # says so explicitly. A paradigm that predates the flag
+                        # still means it when it reports 100.
+                        if "done" in data:
+                            done = bool(data["done"])
+                        else:
+                            done = progress >= 99.9 and not seg_total
+
                         self.last_status = status
 
                         if progress < 0:
@@ -858,15 +975,16 @@ class ControlPanel:
                             self.progress_var.set(0)
                             self.status_label.config(text=status)
                             self.percentage_label.config(text="—")
-                        elif progress >= 99.9:
+                        elif done:
                             self.progress_var.set(100)
                             self.status_label.config(text="Completed (window still open)")
-                            self.percentage_label.config(text="100%")
+                            self.percentage_label.config(text=self._format_progress(100))
                             self.progress_complete = True
                         else:
                             self.progress_var.set(progress)
                             self.status_label.config(text=status)
-                            self.percentage_label.config(text=f"{progress}%")
+                            self.percentage_label.config(
+                                text=self._format_progress(progress, seg_index, seg_total))
                 except Exception:
                     # Progress-file write race / transient — ignore and retry
                     pass
@@ -894,7 +1012,7 @@ class ControlPanel:
         self.cleanup()
 
         self.progress_var.set(100 if completed else self.progress_var.get())
-        self.percentage_label.config(text="100%" if completed else
+        self.percentage_label.config(text=self._format_progress(100) if completed else
                                      self.percentage_label.cget("text"))
         self.status_label.config(
             text="Completed" if completed else f"Ended early: {last_status or 'unknown'}")
@@ -992,8 +1110,16 @@ class ControlPanel:
 # Main
 # ----------------------------------------------------------------------------
 def main():
+    parser = argparse.ArgumentParser(description="cbgPARADIGM control panel")
+    parser.add_argument('--dry-run', '--dry_run', dest='dry_run', action='store_true',
+                        help="Testing mode: logs and the trial feed go to a "
+                             "throwaway folder in the OS temp directory and no "
+                             "results are written. Nothing is created beside the "
+                             "repo or in project_root.")
+    args = parser.parse_args()
+
     root = tk.Tk()
-    app = ControlPanel(root)
+    app = ControlPanel(root, dry_run=args.dry_run)
 
     def on_closing():
         app.shutdown()

@@ -1,7 +1,7 @@
 {
+    "__comment"             : "Copy me to settings.local.json (untracked) and keep ONLY the keys THIS machine overrides. Everything else keeps following settings.json, so new shared keys still arrive with a git pull.",
+
     "display": {
-        "width"             : 1920,
-        "height"            : 1080,
         "monitor_index"     : 1
     },
     "paths": {
@@ -9,13 +9,6 @@
         "nirx_data"         : "C:\\NIRx\\Data",
         "emotiv_data"       : "C:\\Emotiv_data",
         "video_instructions": "C:\\Users\\biochemlab\\Desktop\\N-back instructions video.mov",
-        "log_dir"           : "",
         "fleet_dir"         : ""
-    },
-    "control_panel": {
-        "window_name"       : "Paradigm Setup",
-        "window_position"   : [50, 450],
-        "window_size"       : [400, 545],
-        "always_on_top"     : false
     }
 }

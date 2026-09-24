@@ -15,8 +15,11 @@ parent_dir = script_dir.parent
 sys.path.insert(0, str(parent_dir))
 
 from auxfunc import crashlog
+from auxfunc.config import load_config
+from auxfunc.version import describe as build_version
+from auxfunc.perf_stream import PerfEmitter, classify
 from auxfunc.paradigm_utils import (
-    update_progress, check_for_quit, display_message, ensure_window_focus, play_audio, TriggerManager, resolve_display, load_strings,
+    update_progress, set_segment, check_for_quit, display_message, ensure_window_focus, play_audio, TriggerManager, resolve_display, load_strings,
     RunControl, get_font, clear_font_cache, is_modifier_key, CONTINUE, QUIT, SKIP
 )
 
@@ -34,13 +37,11 @@ LOG = crashlog.get()
 
 
 def load_config_profile(profile_key: str):
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_dir = os.path.join(script_dir, "..", "configs")
-
-    with open(os.path.join(config_dir, "settings.json"), "r") as f:
-        settings = json.load(f)
-    with open(os.path.join(config_dir, "profiles.json"), "r") as f:
-        profiles = json.load(f)
+    # Same loader the control panel uses, so a machine's settings.local.json
+    # applies here too -- otherwise the paradigm would run with the shared
+    # defaults while the panel used the local paths.
+    settings = load_config("settings.json")
+    profiles = load_config("profiles.json")
     if profile_key not in profiles:
         raise KeyError(f"profile '{profile_key}' is not in profiles.json "
                        f"(available: {', '.join(sorted(profiles))})")
@@ -204,7 +205,7 @@ def wait_for_ready(screen, font, message, control, width_screen, height_screen,
 
 def run_rest_states(screen, font, rest_states, rest_period, instruction_time, window_name,
                     width_screen, height_screen, trigger, progress_file=None, use_sound=True,
-                    control=None):
+                    control=None, segment_base=0, segment_total=0):
 
     audio_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
 
@@ -219,9 +220,18 @@ def run_rest_states(screen, font, rest_states, rest_period, instruction_time, wi
     else:
         periods = [rest_period] * len(rest_states)
 
+    # Segment numbering counts only the rest states that actually run, so a
+    # profile with a 'none' placeholder does not leave a gap in the counter.
+    n_active = len([s for s in rest_states if s != 'none'])
+    seg_no   = 0
+
     for enum, state in enumerate(rest_states):
         if state == 'none':
             continue
+
+        seg_no += 1
+        set_segment(f"Rest {seg_no}/{n_active} (eyes {state})",
+                    segment_base + seg_no, segment_total)
 
         if progress_file:
             update_progress(progress_file, 0,
@@ -253,7 +263,7 @@ def run_rest_states(screen, font, rest_states, rest_period, instruction_time, wi
                                   progress_file=progress_file,
                                   status=f"Rest state {enum+1}: in progress (eyes {state})",
                                   progress_start=20,
-                                  progress_end=99,
+                                  progress_end=100,
                                   width_screen=width_screen,
                                   height_screen=height_screen,
                                   control=control)
@@ -262,7 +272,7 @@ def run_rest_states(screen, font, rest_states, rest_period, instruction_time, wi
         if outcome == SKIP:
             LOG.event('segment_skipped', segment='rest', index=enum, eyes=state)
             if progress_file:
-                update_progress(progress_file, 99,
+                update_progress(progress_file, 100,
                                 f"Rest state {enum+1}/{len(rest_states)} skipped by operator")
 
         if use_sound:
@@ -273,7 +283,7 @@ def run_rest_states(screen, font, rest_states, rest_period, instruction_time, wi
                   skipped=(outcome == SKIP))
 
     if progress_file:
-        update_progress(progress_file, 0, "Rest states complete. Proceeding to task.")
+        update_progress(progress_file, 100, "Rest states complete. Proceeding to task.")
     return CONTINUE
 
 
@@ -297,7 +307,8 @@ def _instructions_for_block(instructions, index):
 
 def run_trials(screen, font, stimulus, stim_type, settings, profile, width_screen, height_screen,
                window_name, trigger, progress_file=None, subject_id=None, control=None,
-               state=None):
+               state=None, segment_base=0, segment_total=0, perf=None,
+               dry_run=False):
 
     pygame_hwnd      = find_paradigm_window(window_name)
     instruction_time = profile.get('instructions',       10000)
@@ -331,8 +342,6 @@ def run_trials(screen, font, stimulus, stim_type, settings, profile, width_scree
     # -- Get the instruction images path (located in _resources/images)
     resource_path = Path(os.path.dirname(os.path.abspath(__file__))) / '_resources'
 
-    progress_per_trial_type = 98 / len(stim_type) if stim_type else 0
-
     # -- Stimulus container rectangle
     rect_size = height_screen // 2
     rectangle = pygame.Rect((width_screen - rect_size) // 2,
@@ -344,25 +353,32 @@ def run_trials(screen, font, stimulus, stim_type, settings, profile, width_scree
     stim_font = get_font(300)
 
     # -- Iterate through stimuli
+    # Every block owns a full 0-100 bar: instructions take the first tenth,
+    # the stimuli the rest. The segment counter says which block this is.
     for i, trial_type in enumerate(stim_type):
-        progress_start    = i * progress_per_trial_type
-        progress_end      = (i + 1) * progress_per_trial_type
+        progress_start    = 0
+        progress_end      = 100
         trials_in_block   = len(stimulus[trial_type])
-        progress_per_trial = progress_per_trial_type / trials_in_block if trials_in_block else 0
+
+        set_segment(f"Block {i+1}/{len(stim_type)} ({trial_type})",
+                    segment_base + i + 1, segment_total)
 
         if progress_file:
             update_progress(progress_file, progress_start,
                             f"Starting trial block: {i+1}/{len(stim_type)}")
         LOG.event('segment_start', segment='block', index=i, name=str(trial_type),
                   n_stimuli=trials_in_block)
+        if perf is not None:
+            perf.emit(type='block', event='start', index=i, name=str(trial_type),
+                      n=trials_in_block)
 
         # Look for a task-specific image for this trial
         trial_image_path = resource_path / 'images' / f"{trial_type}_{image_path_appendix}.png"
         image_path = str(trial_image_path) if trial_image_path.exists() else None
 
         # Display instruction screen (takes 10% of this trial type's progress)
-        instr_progress_start = progress_start
-        instr_progress_end   = progress_start + (progress_per_trial_type * 0.1)
+        instr_progress_start = 0
+        instr_progress_end   = 10
 
         outcome = display_message(screen, font, _instructions_for_block(instructions, i),
                                   instruction_time,
@@ -410,6 +426,10 @@ def run_trials(screen, font, stimulus, stim_type, settings, profile, width_scree
                 temp_rt.append(np.inf)
                 temp_offset.append(np.nan)
                 temp_sk.append(1)
+                if perf is not None:
+                    perf.emit(type='trial', block=i, name=str(trial_type), idx=idx,
+                              n=stim_count, stim=str(stim), target=None,
+                              pressed=0, rt=None, outcome=None, skipped=1)
                 continue
 
             stim_progress_start = stimuli_progress_start + (idx       * progress_per_stim)
@@ -498,10 +518,26 @@ def run_trials(screen, font, stimulus, stim_type, settings, profile, width_scree
             temp_rt.append(timepressed)
             temp_sk.append(0)
 
+            # Feed the live monitor. emit() only queues; a daemon thread does
+            # the write, so this costs the stimulus loop microseconds.
+            if perf is not None:
+                try:
+                    target = 1 if int(resp) else 0
+                except (TypeError, ValueError):
+                    target = 0
+                pressed = 1 if key_pressed is not None else 0
+                rt = float(timepressed) if (pressed and np.isfinite(timepressed)) else None
+                perf.emit(type='trial', block=i, name=str(trial_type), idx=idx,
+                          n=stim_count, stim=str(stim), target=target,
+                          pressed=pressed, rt=rt,
+                          outcome=classify(target, pressed), skipped=0)
+
             results_df = _snapshot()
 
             # Save interim results if subject_id is provided
-            if subject_id and subject_id != "UNKNOWN" and profile:
+            if dry_run:
+                pass
+            elif subject_id and subject_id != "UNKNOWN" and profile:
                 save_results(results_df, Path(project_root), subject_id,
                              profile.get("appendix", ""), interim=True)
 
@@ -523,6 +559,9 @@ def run_trials(screen, font, stimulus, stim_type, settings, profile, width_scree
                             f"Completed trial block: {i+1}/{len(stim_type)}")
         LOG.event('segment_end', segment='block', index=i, name=str(trial_type),
                   skipped=block_skipped)
+        if perf is not None:
+            perf.emit(type='block', event='end', index=i, name=str(trial_type),
+                      skipped=int(block_skipped))
 
     return _snapshot()
 
@@ -554,8 +593,16 @@ def save_results(results, save_path, subject_id, profile_appendix="", interim=Fa
     else:
         filename = f"{subject_id}{profile_appendix}.csv"
 
-    attempts = [os.path.join(str(save_path), project),
-                os.path.join(_rescue_dir(), project)]
+    # 'C:\\Projects' means nothing off Windows, and os.makedirs would cheerfully
+    # create a folder literally called 'C:\\Projects' in the working directory.
+    root_text = str(save_path)
+    if os.name != 'nt' and re.match(r'^[A-Za-z]:[\\/]', root_text):
+        LOG.warn(f"save_results: '{root_text}' is a Windows path and this is not "
+                 f"Windows; writing to the rescue directory instead")
+        attempts = [os.path.join(_rescue_dir(), project)]
+    else:
+        attempts = [os.path.join(root_text, project),
+                    os.path.join(_rescue_dir(), project)]
     last_error = None
     for attempt, project_dir in enumerate(attempts):
         try:
@@ -595,6 +642,11 @@ def parse_arguments():
                         help='Enable beep sounds')
     parser.add_argument('--language', default='en',
                         help="UI language code from configs/strings.json (e.g. 'en', 'es')")
+    parser.add_argument('--dry_run', action='store_true',
+                        help="Testing mode: do not write any results files")
+    parser.add_argument('--perf_file', default=None,
+                        help="JSONL file to append per-trial performance records to, "
+                             "for the live monitor (auxfunc/perf_monitor.py)")
     return parser.parse_args()
 
 
@@ -631,6 +683,10 @@ def main():
     state   = {'results': None}
     crashed = False
 
+    # Live performance feed. Absent --perf_file this is inert, and nothing in
+    # the run depends on anything reading it.
+    perf = PerfEmitter(args.perf_file, logger=LOG)
+
     try:
         # Initialize pygame
         screen, clock, font, width_screen, height_screen, window_name = init_game(settings, profile)
@@ -646,9 +702,21 @@ def main():
             raise KeyError(f"{profile['stim_type']} has no response column for: "
                            f"{', '.join(missing)}")
         pygame_hwnd = find_paradigm_window(window_name)
+
+        # Progress segmentation: one 0-100 bar per rest state and per block,
+        # plus a final segment covering the save and the closing screen.
+        rest_cfg      = profile.get("rest_states", []) or []
+        n_rest_seg    = len([st for st in rest_cfg if st != 'none'])
+        segment_total = n_rest_seg + len(stim_type) + 1
+        set_segment(None, 0, segment_total)
+
         LOG.event('run_start', profile=args.profile, subject=args.subject_id,
                   blocks=stim_type, rest_states=profile.get('rest_states'),
-                  trigger=trigger.status())
+                  trigger=trigger.status(), build=build_version())
+        perf.emit(type='run', subject=args.subject_id, profile=args.profile,
+                  blocks=[str(b) for b in stim_type],
+                  rt_window=(profile.get('stim_presentation', 500)
+                             + profile.get('stim_cooldown', 1500)) / 1000.0)
 
         # Initialize progress file
         if args.progress_file:
@@ -671,7 +739,8 @@ def main():
         if run_rest_states(screen, font, profile["rest_states"], profile["rest_period"],
                            profile["instructions"], window_name, width_screen, height_screen,
                            trigger, progress_file=args.progress_file, use_sound=args.use_sound,
-                           control=control) == QUIT:
+                           control=control, segment_base=0,
+                           segment_total=segment_total) == QUIT:
             return
 
         # Enter waiting room #2
@@ -686,21 +755,28 @@ def main():
         results = run_trials(screen, font, stimulus, stim_type, settings, profile,
                              width_screen, height_screen, window_name, trigger,
                              progress_file=args.progress_file, subject_id=args.subject_id,
-                             control=control, state=state)
+                             control=control, state=state,
+                             segment_base=n_rest_seg, segment_total=segment_total,
+                             perf=perf, dry_run=args.dry_run)
 
         # -- Save final results
+        set_segment("Finishing", segment_total, segment_total)
         if args.progress_file:
-            update_progress(args.progress_file, 98, "Saving final results...")
-        output_root = settings.get('paths', {}).get('project_root', '')
-        save_results(results, Path(output_root), args.subject_id, profile.get("appendix", ""))
+            update_progress(args.progress_file, 0, "Saving final results...")
+        if args.dry_run:
+            LOG.log("Dry run: results were not written to disk")
+        else:
+            output_root = settings.get('paths', {}).get('project_root', '')
+            save_results(results, Path(output_root), args.subject_id,
+                         profile.get("appendix", ""))
 
         # -- Final clean up
         if args.progress_file:
-            update_progress(args.progress_file, 99, "Finishing up...")
+            update_progress(args.progress_file, 10, "Finishing up...")
         if display_message(screen, font, txt('close'), profile.get('instructions', 10000),
                            progress_file=args.progress_file,
                            status="Finishing up...",
-                           progress_start=99,
+                           progress_start=10,
                            progress_end=100,
                            width_screen=width_screen,
                            height_screen=height_screen,
@@ -709,9 +785,10 @@ def main():
 
         if args.progress_file:
             active = trigger.status()['active_method'].upper()
-            update_progress(args.progress_file, 100, f"Complete ({active})")
+            update_progress(args.progress_file, 100, f"Complete ({active})", done=True)
         LOG.event('run_complete', skips=control.skips,
                   triggers=trigger.sent_count)
+        perf.emit(type='run', event='end', complete=True)
 
         # Enter waiting room (blank)
         while True:
@@ -728,6 +805,9 @@ def main():
         # traceback, so write it out before anything else unwinds.
         try:
             partial = state.get('results')
+            if args.dry_run:
+                LOG.log('Dry run: partial results were not written to disk')
+                partial = None
             if partial is not None and not partial.empty:
                 output_root = settings.get('paths', {}).get('project_root', '')
                 if save_results(partial, Path(output_root), args.subject_id,
@@ -740,6 +820,11 @@ def main():
                             f"CRASHED - see {os.path.basename(LOG.path or 'log')}")
     finally:
         trigger.close()
+        try:
+            perf.emit(type='run', event='end', complete=not crashed)
+            perf.close()
+        except Exception:
+            pass
         try:
             clear_font_cache()
             pygame.quit()

@@ -8,6 +8,11 @@ import argparse
 import json
 from datetime import datetime
 
+try:
+    from auxfunc.config import load_config
+except ImportError:          # run directly from inside auxfunc/
+    from config import load_config
+
 class ExportResults:
     def __init__(self):
         self.results = {
@@ -222,16 +227,11 @@ def export_data(subject_id, project_root, nirx_path, eeg_path, overwrite=False):
 
 
 def load_settings():
-    """Load settings.json from configs folder (relative to project root)"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Go up one level from auxfunc to project root, then into configs
-    config_path = os.path.join(script_dir, '..', 'configs', 'settings.json')
-    
+    """Load settings.json plus this machine's settings.local.json overlay"""
     try:
-        with open(config_path, 'r') as f:
-            return json.load(f)
+        return load_config('settings.json')
     except FileNotFoundError:
-        print(f"Error: settings.json not found at {config_path}")
+        print("Error: configs/settings.json not found")
         return None
     except json.JSONDecodeError as e:
         print(f"Error parsing settings.json: {e}")

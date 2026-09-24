@@ -8,8 +8,11 @@ script_dir = Path(__file__).resolve().parent
 parent_dir = script_dir.parent
 sys.path.insert(0, str(parent_dir))
 from auxfunc import crashlog
+from auxfunc.config import load_config
+from auxfunc.version import describe as build_version
+from auxfunc.perf_stream import PerfEmitter
 from auxfunc.paradigm_utils import (
-    update_progress, check_for_quit, display_message, play_audio, wait_period, TriggerManager, resolve_display, load_strings,
+    update_progress, set_segment, check_for_quit, display_message, play_audio, wait_period, TriggerManager, resolve_display, load_strings,
     RunControl, get_font, clear_font_cache, CONTINUE, QUIT, SKIP
 )
 
@@ -27,13 +30,11 @@ LOG = crashlog.get()
 
 
 def load_config_profile(profile_key: str):
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_dir = os.path.join(script_dir, "..", "configs")
-
-    with open(os.path.join(config_dir, "settings.json"), "r") as f:
-        settings = json.load(f)
-    with open(os.path.join(config_dir, "profiles.json"), "r") as f:
-        profiles = json.load(f)
+    # Same loader the control panel uses, so a machine's settings.local.json
+    # applies here too -- otherwise the paradigm would run with the shared
+    # defaults while the panel used the local paths.
+    settings = load_config("settings.json")
+    profiles = load_config("profiles.json")
     if profile_key not in profiles:
         raise KeyError(f"profile '{profile_key}' is not in profiles.json "
                        f"(available: {', '.join(sorted(profiles))})")
@@ -81,6 +82,14 @@ def parse_arguments():
                         help='Open the LSL marker stream (used as fallback if TTL unavailable)')
     parser.add_argument('--use_sound', action='store_true',
                         help='Enable beep sounds')
+    parser.add_argument('--perf_file', default=None,
+                        help="JSONL file for the live monitor. Fingertapping has no "
+                             "scored trials, so only the run markers are written -- "
+                             "the argument exists because the control panel passes "
+                             "the same command line to every paradigm.")
+    parser.add_argument('--dry_run', action='store_true',
+                        help="Testing mode (accepted for symmetry with nback; "
+                             "this paradigm writes no results files anyway)")
     parser.add_argument('--language', default='en',
                         help="UI language code from configs/strings.json (e.g. 'en', 'es')")
     return parser.parse_args()
@@ -117,6 +126,11 @@ def main():
                                      ['left', 'right', 'left', 'right', 'left', 'right'])
     keystroke_programs = profile.get('keystroke_programs', DEFAULT_KEYSTROKE_PROGRAMS)
 
+    # Progress segmentation: the resting state, then a tapping and a rest
+    # segment per repetition, then a final one. Each fills its own 0-100 bar.
+    segment_total = 2 + (2 * len(repetitions))
+    set_segment(None, 0, segment_total)
+
     LOG.log(f"Debug: Using profile: {args.profile}")
     LOG.log(f"Debug: Subject ID: {args.subject_id}")
     LOG.log(f"Debug: Language: {args.language}")
@@ -128,6 +142,12 @@ def main():
 
     control = RunControl(command_file=args.command_file, logger=LOG)
     crashed = False
+
+    # No scored trials here; this just lets a monitor opened on this run show
+    # whose run it is instead of sitting on "waiting for trials".
+    perf = PerfEmitter(args.perf_file, logger=LOG)
+    perf.emit(type='run', subject=args.subject_id, profile=args.profile,
+              blocks=[], rt_window=0)
 
     try:
         # Initialize pygame
@@ -146,7 +166,8 @@ def main():
         font          = get_font(120)
 
         LOG.event('run_start', profile=args.profile, subject=args.subject_id,
-                  repetitions=repetitions, trigger=trigger.status())
+                  repetitions=repetitions, trigger=trigger.status(),
+                  build=build_version())
 
         # Lobby 01: Welcome screen
         screen.fill((0, 0, 0))
@@ -183,15 +204,16 @@ def main():
         pygame.display.flip()
         trigger.send(value=8, return_focus_to=window_name, label='resting_state_onset')
 
+        set_segment("Resting state", 1, segment_total)
         if args.progress_file:
-            update_progress(args.progress_file, 5, "Initial resting state.")
+            update_progress(args.progress_file, 0, "Initial resting state.")
         LOG.event('segment_start', segment='resting_state', duration_ms=resting_state)
 
         outcome = display_message(screen, font, "+", resting_state, custom_font_size=300,
                                   progress_file=args.progress_file,
                                   status="Initial resting state.",
                                   progress_start=0,
-                                  progress_end=99,
+                                  progress_end=100,
                                   width_screen=width_screen,
                                   height_screen=height_screen,
                                   control=control)
@@ -200,7 +222,7 @@ def main():
         if outcome == SKIP:
             LOG.event('segment_skipped', segment='resting_state')
             if args.progress_file:
-                update_progress(args.progress_file, 9,
+                update_progress(args.progress_file, 100,
                                 "Initial resting state skipped by operator")
 
         trigger.send(value=8, return_focus_to=window_name, label='resting_state_offset')
@@ -225,20 +247,18 @@ def main():
                 break
 
         if args.progress_file:
-            update_progress(args.progress_file, 10, "Beginning exercise sequence...")
+            update_progress(args.progress_file, 100, "Beginning exercise sequence...")
 
         screen.fill((0, 0, 0))
         pygame.display.flip()
 
         # Exercise sequence
-        progress_per_rep = 99 / len(repetitions)
-        progress_base    = 10
-
         for rep_idx, direction in enumerate(repetitions):
             # ========== EXERCISE PHASE ==========
-            base_progress = progress_base + (rep_idx * progress_per_rep)
+            set_segment(f"Tap {rep_idx+1}/{len(repetitions)} ({direction.upper()})",
+                        2 + (2 * rep_idx), segment_total)
             if args.progress_file:
-                update_progress(args.progress_file, base_progress,
+                update_progress(args.progress_file, 0,
                                 f"Exercise {direction.upper()} ({rep_idx+1}/{len(repetitions)})")
 
             trigger.send(value=8, return_focus_to=window_name,
@@ -257,8 +277,8 @@ def main():
                 outcome = wait_period(screen, task_duration,
                                       progress_file=args.progress_file,
                                       status=f"Fingertapping {direction.upper()} ({rep_idx+1}/{len(repetitions)})",
-                                      progress_start=base_progress,
-                                      progress_end=base_progress + (progress_per_rep * 0.5),
+                                      progress_start=0,
+                                      progress_end=100,
                                       control=control)
                 if outcome == QUIT:
                     return
@@ -268,14 +288,15 @@ def main():
                 LOG.event('segment_skipped', segment='tap', index=rep_idx,
                           direction=direction)
                 if args.progress_file:
-                    update_progress(args.progress_file, base_progress,
+                    update_progress(args.progress_file, 100,
                                     f"Tapping {direction.upper()} ({rep_idx+1}/"
                                     f"{len(repetitions)}) skipped by operator")
 
             # ========== REST PHASE ==========
-            rest_progress = base_progress + (progress_per_rep * 0.5)
+            set_segment(f"Rest {rep_idx+1}/{len(repetitions)} (after "
+                        f"{direction.upper()})", 3 + (2 * rep_idx), segment_total)
             if args.progress_file:
-                update_progress(args.progress_file, rest_progress,
+                update_progress(args.progress_file, 0,
                                 f"Resting after {direction.upper()} ({rep_idx+1}/{len(repetitions)})")
 
             trigger.send(value=8, return_focus_to=window_name,
@@ -293,8 +314,8 @@ def main():
                 outcome = wait_period(screen, rest_duration,
                                       progress_file=args.progress_file,
                                       status=f"Resting after {direction.upper()} ({rep_idx+1}/{len(repetitions)})",
-                                      progress_start=rest_progress,
-                                      progress_end=base_progress + progress_per_rep,
+                                      progress_start=0,
+                                      progress_end=100,
                                       control=control)
                 if outcome == QUIT:
                     return
@@ -302,13 +323,14 @@ def main():
                 LOG.event('segment_skipped', segment='rest', index=rep_idx,
                           direction=direction)
                 if args.progress_file:
-                    update_progress(args.progress_file, rest_progress,
+                    update_progress(args.progress_file, 100,
                                     f"Rest after {direction.upper()} ({rep_idx+1}/"
                                     f"{len(repetitions)}) skipped by operator")
 
         # Terminate
+        set_segment("Finishing", segment_total, segment_total)
         if args.progress_file:
-            update_progress(args.progress_file, 95, "Sequence complete")
+            update_progress(args.progress_file, 0, "Sequence complete")
 
         screen.fill((0, 0, 0))
         _complete = txt('complete')
@@ -323,7 +345,7 @@ def main():
 
         if args.progress_file:
             active = trigger.status()['active_method'].upper()
-            update_progress(args.progress_file, 100, f"Complete ({active})")
+            update_progress(args.progress_file, 100, f"Complete ({active})", done=True)
         LOG.event('run_complete', skips=control.skips, triggers=trigger.sent_count)
 
         screen.fill((0, 0, 0))
@@ -342,6 +364,11 @@ def main():
                             f"CRASHED - see {os.path.basename(LOG.path or 'log')}")
     finally:
         trigger.close()
+        try:
+            perf.emit(type='run', event='end', complete=not crashed)
+            perf.close()
+        except Exception:
+            pass
         try:
             clear_font_cache()
             pygame.quit()

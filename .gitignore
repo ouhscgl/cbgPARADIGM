@@ -1,9 +1,12 @@
-# Run and crash logs written by auxfunc/crashlog.py
+# Run and crash logs
 logs/
 
-# Python bytecode caches
+# Python caches
 __pycache__/
 *.py[cod]
 
 # macOS
 .DS_Store
+
+# Per-machine config
+configs/*.local.json
