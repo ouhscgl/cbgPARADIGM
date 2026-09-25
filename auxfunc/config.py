@@ -229,13 +229,36 @@ def _cmd_status(directory):
     names = sorted(n for n in os.listdir(directory)
                    if n.endswith('.json') and '.local' not in n)
     for name in names:
-        overlay = load_overlay(name, directory)
         edited = _git(['diff', '--quiet', 'HEAD', '--', f'configs/{name}'], root)
         dirty = edited is None      # non-zero exit means the file differs
         print(f"{name}")
-        print(f"    overlay : {local_path_for(name, directory) if overlay else '(none)'}")
-        if overlay:
-            print(f"    overrides: {', '.join(sorted(overlay))}")
+
+        # Three different situations used to print the same "(none)": no file,
+        # a file that will not parse, and a file whose every key is still
+        # commented out with __. Say which.
+        overlay_path = local_path_for(name, directory)
+        if not os.path.exists(overlay_path):
+            print("    overlay : (none)")
+        else:
+            try:
+                with open(overlay_path, 'r', encoding='utf-8-sig') as handle:
+                    raw = json.load(handle)
+            except Exception as exc:
+                print(f"    overlay : {overlay_path}")
+                print(f"    !! INVALID, so it is being ignored: {exc}")
+            else:
+                live = strip_comments(raw)
+                print(f"    overlay : {overlay_path}")
+                if live:
+                    print(f"    overrides: {', '.join(sorted(live))}")
+                else:
+                    commented = [str(k) for k in raw if str(k).startswith('__')]
+                    print("    !! HAS NO EFFECT: every key is still commented out "
+                          "with __")
+                    if commented:
+                        print(f"       {', '.join(commented)}")
+                    print("       remove the __ prefix from the section you want "
+                          "to apply")
         if dirty:
             print("    !! this tracked file has local edits -- an update will "
                   "clash with them.")
@@ -365,6 +388,9 @@ def main():
                         help="with --extract: write the overlay file")
     parser.add_argument('--force', action='store_true',
                         help="with --write: replace an existing overlay")
+    parser.add_argument('--status', action='store_true',
+                        help="show each config, its overlay and what it overrides "
+                             "(this is also what runs with no arguments)")
     parser.add_argument('--validate', action='store_true',
                         help="load every config the way the app does and report "
                              "anything broken")

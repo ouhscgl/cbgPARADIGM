@@ -159,8 +159,7 @@ class ExportResultsWindow:
 
         self.window = tk.Toplevel(parent)
         self.window.title("Export Results")
-        geom_x = self.window.master.winfo_width() - 33
-        self.window.geometry(f"{geom_x}x100")
+        self.window.minsize(max(320, self.window.master.winfo_width() - 33), 0)
         self.window.resizable(False, False)
         self.window.transient(parent)
         self.window.grab_set()
@@ -181,9 +180,15 @@ class ExportResultsWindow:
         for file_type, info in files.items():
             status = info.get('status', 'unknown')
             display_name = display_names.get(file_type, file_type)
-            self.create_result_row(parent, display_name, status)
+            self.create_result_row(parent, display_name, status,
+                                   info.get('message', ''), info.get('source', ''))
 
-    def create_result_row(self, parent, display_name, status):
+    def create_result_row(self, parent, display_name, status, message='', source=''):
+        """One line per file, plus what actually happened to it.
+
+        The icon alone could not tell you which session was copied or why
+        something was skipped -- the message was computed and then thrown away.
+        """
         row_frame = ttk.Frame(parent)
         row_frame.pack(fill="x", pady=1)
         if status == 'success':
@@ -197,6 +202,13 @@ class ExportResultsWindow:
         tk.Label(row_frame, text=f" {display_name}",
                  font=("Verdana", 8, "bold"),
                  foreground="black", anchor="w").pack(side="left", fill="x", expand=True)
+
+        detail = message or status
+        if source:
+            detail += f"\n     from {source}"
+        tk.Label(parent, text=f"      {detail}", font=("TkDefaultFont", 8),
+                 foreground="#555555", anchor="w", justify="left"
+                 ).pack(fill="x", padx=(2, 0))
 
     def center_window(self, x_offset=17, y_offset=62):
         self.window.update_idletasks()
