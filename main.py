@@ -5,7 +5,8 @@ import argparse, subprocess, sys, os, json, tempfile, gc, threading, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from auxfunc import crashlog
 from auxfunc.marker_relay import MarkerRelayServer
-from auxfunc.config import load_config, load_overlay, applied_overlays
+from auxfunc.config import (load_config, load_overlay, applied_overlays,
+                            profile_problems)
 from auxfunc import apps, fleet, updater, version
 from auxfunc.perf_stream import default_path as perf_file_for
 from auxfunc.paradigm_utils import write_skip_command
@@ -52,15 +53,35 @@ LSL_SOURCE_ID        = 'paradigm_triggers'
 
 # Configuration Loading
 # ----------------------------------------------------------------------------
+# Why a config failed to load, filled in by load_configuration(). The panel is
+# usually started by pythonw, where print() goes nowhere, so the reason has to
+# survive all the way to the dialog rather than being reported to a console
+# that does not exist.
+CONFIG_ERRORS = []
+
+
 def load_configuration(filename):
     """Shared config plus this machine's optional <name>.local.json overlay."""
+    from auxfunc.config import config_dir, local_path_for
     try:
         return load_config(filename)
-    except FileNotFoundError:
-        print(f"Warning: configs/{filename} not found")
+    except FileNotFoundError as e:
+        CONFIG_ERRORS.append(f"{filename}: not found\n"
+                             f"    looked in {config_dir()}\n"
+                             f"    ({e})")
         return {}
     except json.JSONDecodeError as e:
-        print(f"Error parsing settings.json: {e}")
+        overlay = local_path_for(filename)
+        where = (f"{filename} or its overlay {os.path.basename(overlay)}"
+                 if os.path.exists(overlay) else filename)
+        CONFIG_ERRORS.append(f"{where}: invalid JSON\n"
+                             f"    line {e.lineno}, column {e.colno}: {e.msg}")
+        return None
+    except Exception as e:
+        # Encoding trouble (a file saved as UTF-16), a permission problem on a
+        # mapped drive, anything else: report it rather than dying with a
+        # traceback nobody can see.
+        CONFIG_ERRORS.append(f"{filename}: {type(e).__name__}: {e}")
         return None
 
 
@@ -74,6 +95,8 @@ def build_experiments_dict(profiles, local_keys=()):
     """
     experiments = {}
     for profile_key, profile_data in profiles.items():
+        if not isinstance(profile_data, dict):
+            continue                    # already reported at load; never crash here
         display_name = profile_data.get('display_name', profile_key)
         if profile_key in local_keys:
             display_name = f"{display_name}  [local]"
@@ -364,8 +387,25 @@ class ControlPanel:
         self.settings = load_configuration('settings.json')
         self.profiles = load_configuration('profiles.json')
         if not self.settings or not self.profiles:
-            messagebox.showerror("Error", "Failed to load settings / profiles.")
+            detail = "\n\n".join(CONFIG_ERRORS) if CONFIG_ERRORS else (
+                "Both files loaded but at least one was empty.\n"
+                f"    settings.json: {len(self.settings or {})} keys\n"
+                f"    profiles.json: {len(self.profiles or {})} entries")
+            messagebox.showerror(
+                "Configuration error",
+                f"The control panel could not load its configuration.\n\n"
+                f"{detail}\n\n"
+                f"Run this in the cbgPARADIGM folder for the full picture:\n"
+                f"    python auxfunc/config.py --validate")
             sys.exit(1)
+
+        # Overlays are hand-written on lab machines. A stray comment key or a
+        # typo must not take the panel down before it can say what is wrong, so
+        # entries that are not profiles are dropped here and reported below.
+        self._profile_problems = profile_problems(self.profiles)
+        for key, _complaint in self._profile_problems:
+            if not isinstance(self.profiles.get(key), dict):
+                del self.profiles[key]
 
         # Window setup
         self.root = root
@@ -404,6 +444,17 @@ class ControlPanel:
                      + ("  *** LOCAL EDITS ***" if build['dirty'] else ""))
         for overlay in applied_overlays():
             self.log.log(f"Config overlay applied: {overlay}")
+
+        if self._profile_problems:
+            for key, complaint in self._profile_problems:
+                self.log.warn(f"profiles: '{key}' {complaint}")
+            messagebox.showwarning(
+                "Problems in profiles",
+                "These entries were ignored:\n\n"
+                + "\n".join(f"  {key}: {complaint}"
+                             for key, complaint in self._profile_problems)
+                + "\n\nThey are almost certainly from a configs/profiles.local.json "
+                  "on this machine. Run:\n\n    python auxfunc/config.py --validate")
 
         # Which protocols came from this machine rather than from the repo.
         profile_overlay     = load_overlay('profiles.json')

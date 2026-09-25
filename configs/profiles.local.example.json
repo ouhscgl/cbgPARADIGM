@@ -1,25 +1,31 @@
 {
-    "__comment": "Copy me to profiles.local.json (untracked) and keep ONLY what THIS machine changes. Three things are possible: override part of a shared profile, add a profile of your own, or hide one with null. Everything not mentioned here keeps following the shared profiles.json, so new protocols still arrive with a git pull. The control panel marks anything defined here as [local] in the dropdown.",
+    "__how_to_use": "Copy this file to profiles.local.json. Every key below starts with __ , and keys starting with __ are ignored as comments -- so this file does NOTHING until you remove the __ prefix from the part you actually want. Keep only what THIS machine changes; everything else keeps following the shared profiles.json, so new protocols still arrive with a git pull. Anything defined here shows as [local] in the control panel dropdown.",
 
-    "NRA_number": {
-        "rest_period"       : 15000,
-        "rest_states"       : ["open", "closed"]
+    "__1_override_part_of_a_shared_profile": {
+        "NRA_number": {
+            "rest_period"       : 15000,
+            "rest_states"       : ["open", "closed"]
+        }
     },
 
-    "SITE_pilot": {
-        "display_name"      : "Site pilot: Nback (letters)",
-        "module"            : "nback.py",
-        "stim_type"         : "letter_stimulus.csv",
-        "rest_period"       : 60000,
-        "instructions"      : 10000,
-        "stim_presentation" : 500,
-        "stim_cooldown"     : 1500,
-        "rest_states"       : ["open"],
-        "appendix"          : "_PILOT",
-        "keystroke_programs": [
-            {"window": "Aurora fNIRS", "key": "F8"}
-        ]
+    "__2_add_a_protocol_of_your_own": {
+        "SITE_pilot": {
+            "display_name"      : "Site pilot: Nback (letters)",
+            "module"            : "nback.py",
+            "stim_type"         : "letter_stimulus.csv",
+            "rest_period"       : 60000,
+            "instructions"      : 10000,
+            "stim_presentation" : 500,
+            "stim_cooldown"     : 1500,
+            "rest_states"       : ["open"],
+            "appendix"          : "_PILOT",
+            "keystroke_programs": [
+                {"window": "Aurora fNIRS", "key": "F8"}
+            ]
+        }
     },
 
-    "TBI_letter": null
+    "__3_hide_a_protocol_this_machine_never_runs": {
+        "TBI_letter": null
+    }
 }

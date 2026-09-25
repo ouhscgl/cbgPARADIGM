@@ -1,10 +1,11 @@
 {
-    "__comment"             : "Copy me to settings.local.json (untracked) and keep ONLY the keys THIS machine overrides. Everything else keeps following settings.json, so new shared keys still arrive with a git pull.",
+    "__how_to_use": "Copy this file to settings.local.json. Every key below starts with __ , and keys starting with __ are ignored as comments -- so this file does NOTHING until you remove the __ prefix from the section you actually want. Keep only the keys THIS machine overrides; everything else keeps following the shared settings.json, so new settings still arrive with a git pull.",
 
-    "display": {
+    "__display": {
         "monitor_index"     : 1
     },
-    "paths": {
+
+    "__paths": {
         "project_root"      : "C:\\Projects",
         "nirx_data"         : "C:\\NIRx\\Data",
         "emotiv_data"       : "C:\\Emotiv_data",
@@ -12,7 +13,7 @@
         "fleet_dir"         : ""
     },
 
-    "applications": {
+    "__applications": {
         "NIRStar"           : {"window": "NIRx NIRStar",
                                "exe":    "C:\\NIRx\\NIRStar15-3\\NIRStar.exe",
                                "image":  "NIRStar.exe"},

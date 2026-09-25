@@ -24,6 +24,11 @@ that shares a key with a shared one wins, and the control panel marks it
 Setting a key to null in an overlay REMOVES it, which is how a machine hides a
 protocol it never runs.
 
+JSON has no comments, so any key beginning with __ is treated as one and
+dropped at load. Without that, a "__comment" at the top of an overlay arrives
+in profiles as an entry whose value is a string, and the control panel dies
+trying to read a display_name off it before it can even draw a window.
+
     settings.json        settings.local.json        result
     paths.nirx_data      paths.nirx_data            local wins
     paths.log_dir        (absent)                   shared value
@@ -38,7 +43,8 @@ import subprocess
 import sys
 
 __all__ = ['load_config', 'load_overlay', 'config_dir', 'local_path_for',
-           'applied_overlays', 'deep_merge', 'diff_tree']
+           'applied_overlays', 'deep_merge', 'diff_tree', 'strip_comments',
+           'profile_problems']
 
 # Overlay files actually used this process, for logging at startup.
 _applied = []
@@ -54,6 +60,16 @@ def local_path_for(filename, directory=None):
     """configs/settings.json -> configs/settings.local.json"""
     stem, ext = os.path.splitext(filename)
     return os.path.join(directory or config_dir(), f"{stem}.local{ext}")
+
+
+def strip_comments(value):
+    """Drop every __-prefixed key, at any depth. JSON has no comments."""
+    if isinstance(value, dict):
+        return {key: strip_comments(item) for key, item in value.items()
+                if not (isinstance(key, str) and key.startswith('__'))}
+    if isinstance(value, list):
+        return [strip_comments(item) for item in value]
+    return value
 
 
 def deep_merge(base, overlay):
@@ -89,12 +105,12 @@ def load_config(filename, directory=None):
     """
     directory = directory or config_dir()
     with open(os.path.join(directory, filename), 'r', encoding='utf-8-sig') as handle:
-        data = json.load(handle)
+        data = strip_comments(json.load(handle))
 
     overlay_path = local_path_for(filename, directory)
     if os.path.exists(overlay_path):
         with open(overlay_path, 'r', encoding='utf-8-sig') as handle:
-            data = deep_merge(data, json.load(handle))
+            data = deep_merge(data, strip_comments(json.load(handle)))
         if overlay_path not in _applied:
             _applied.append(overlay_path)
     return data
@@ -111,7 +127,7 @@ def load_overlay(filename, directory=None):
         return {}
     try:
         with open(overlay_path, 'r', encoding='utf-8-sig') as handle:
-            return json.load(handle)
+            return strip_comments(json.load(handle))
     except Exception:
         return {}
 
@@ -119,6 +135,26 @@ def load_overlay(filename, directory=None):
 def applied_overlays():
     """Overlay files merged so far in this process (for the startup log)."""
     return list(_applied)
+
+
+def profile_problems(profiles):
+    """Human-readable complaints about a merged profiles dict.
+
+    Returns [(key, problem)]. An overlay is hand-written on a lab machine at
+    an awkward hour, so the failure mode has to be a sentence, not a
+    traceback.
+    """
+    found = []
+    for key, value in (profiles or {}).items():
+        if not isinstance(value, dict):
+            found.append((key, f"is a {type(value).__name__}, not a profile "
+                               f"(a stray comment or a typo in an overlay?)"))
+            continue
+        if not value.get('module'):
+            found.append((key, "has no \"module\""))
+        elif not str(value['module']).endswith('.py'):
+            found.append((key, f"module {value['module']!r} is not a .py file"))
+    return found
 
 
 # ---- migrating a machine that already has hand-edits ------------------------ #
@@ -208,6 +244,38 @@ def _cmd_status(directory):
     return 0
 
 
+def _cmd_validate(directory):
+    """Load every config the way the app does and report anything broken."""
+    problems = 0
+    for name in sorted(n for n in os.listdir(directory)
+                       if n.endswith('.json') and '.local' not in n):
+        try:
+            data = load_config(name, directory)
+        except Exception as exc:
+            print(f"{name}: FAILED to load -> {type(exc).__name__}: {exc}")
+            overlay = local_path_for(name, directory)
+            if os.path.exists(overlay):
+                print(f"    the overlay {os.path.basename(overlay)} is the likely "
+                      f"cause; check its JSON syntax")
+            problems += 1
+            continue
+
+        note = ""
+        if os.path.exists(local_path_for(name, directory)):
+            note = f" (+ {os.path.basename(local_path_for(name, directory))})"
+        print(f"{name}{note}: loads, {len(data)} top-level entries")
+
+        if name == 'profiles.json':
+            for key, complaint in profile_problems(data):
+                print(f"    !! {key} {complaint}")
+                problems += 1
+
+    print("\nNo problems found." if not problems
+          else f"\n{problems} problem(s) -- the control panel will complain about "
+               f"these at startup.")
+    return 1 if problems else 0
+
+
 def _cmd_extract(filename, directory, write, force):
     delta = extract_overlay(filename, directory)
     if delta is None:
@@ -249,10 +317,15 @@ def main():
                         help="with --extract: write the overlay file")
     parser.add_argument('--force', action='store_true',
                         help="with --write: replace an existing overlay")
+    parser.add_argument('--validate', action='store_true',
+                        help="load every config the way the app does and report "
+                             "anything broken")
     parser.add_argument('--dir', default=None, help="configs folder to inspect")
     args = parser.parse_args()
 
     directory = args.dir or config_dir()
+    if args.validate:
+        return _cmd_validate(directory)
     if args.extract:
         return _cmd_extract(args.extract, directory, args.write, args.force)
     return _cmd_status(directory)

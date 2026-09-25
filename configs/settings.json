@@ -19,9 +19,9 @@
         "always_on_top"     : false
     },
     "applications": {
-        "NIRStar"           : {"window": "NIRx NIRStar", "exe": "", "image": ""},
-        "Aurora"            : {"window": "Aurora fNIRS", "exe": "", "image": ""},
-        "EmotivPRO"         : {"window": "EmotivPRO",    "exe": "", "image": ""},
-        "g.Recorder"        : {"window": "g.Recorder",   "exe": "", "image": ""}
+        "NIRStar"           : {"window": "NIRx NIRStar","exe":"C:\\NIRx\\NIRStar15-3\\NIRStar.exe","image":"NIRStar.exe"},
+        "Aurora"            : {"window": "Aurora fNIRS","exe":"C:\\Program Files\\NIRx\\Aurora\\Aurora.exe","image":"Aurora.exe"},
+        "EmotivPRO"         : {"window": "EmotivPRO","exe":"C:\\Program Files\\EmotivPRO\\EmotivPRO.exe","image":"EmotivPRO.exe"},
+        "g.Recorder"        : {"window": "g.Recorder - [Data Viewer]","exe":"C:\\Program Files\\gtec\\gRecorder\\gRecorder.exe","image":"gRecorder.exe"},
     }
 }
