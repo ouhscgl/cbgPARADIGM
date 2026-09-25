@@ -41,5 +41,14 @@ if errorlevel 1 (
 )
 
 python -c "from auxfunc.version import describe; print('Now running', describe())"
+
+echo.
+echo Checking the configuration this update delivered...
+python auxfunc\config.py --validate
+if errorlevel 1 (
+    echo.
+    echo *** The configuration above is broken. The control panel will not start
+    echo *** until it is fixed. Nothing was rolled back - the code is updated.
+)
 echo.
 pause

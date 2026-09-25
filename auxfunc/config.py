@@ -244,6 +244,53 @@ def _cmd_status(directory):
     return 0
 
 
+def _offending_file(name, directory):
+    """Which of the two files behind a merged config actually fails to parse."""
+    for path in (os.path.join(directory, name), local_path_for(name, directory)):
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, 'r', encoding='utf-8-sig') as handle:
+                json.load(handle)
+        except json.JSONDecodeError as exc:
+            return path, exc
+        except Exception as exc:
+            return path, exc
+    return None, None
+
+
+def _show_json_error(path, exc):
+    """Point at the broken line, because 'line 26 column 5' is not enough.
+
+    JSON's message for a trailing comma names the NEXT line -- the closing
+    brace -- not the line with the stray comma, which is why this prints a few
+    lines of context and says so out loud.
+    """
+    print(f"    in {path}")
+    lineno = getattr(exc, 'lineno', None)
+    if lineno is None:
+        print(f"    {exc}")
+        return
+    print(f"    {exc.msg}: line {lineno}, column {exc.colno}")
+    try:
+        with open(path, 'r', encoding='utf-8-sig') as handle:
+            lines = handle.read().splitlines()
+    except Exception:
+        return
+
+    for number in range(max(1, lineno - 3), min(len(lines), lineno + 1) + 1):
+        marker = '>>' if number == lineno else '  '
+        print(f"    {marker} {number:>4} | {lines[number - 1]}")
+        if number == lineno:
+            print(f"           {' ' * (exc.colno + 3)}^")
+
+    # The overwhelmingly common cause in a hand-edited config.
+    previous = '\n'.join(lines[:lineno - 1]).rstrip()
+    if previous.endswith(',') and lines[lineno - 1].strip() in ('}', ']', '},', '],'):
+        print("    -> a comma after the LAST item in a block. Delete the comma "
+              "on the line above.")
+
+
 def _cmd_validate(directory):
     """Load every config the way the app does and report anything broken."""
     problems = 0
@@ -252,11 +299,12 @@ def _cmd_validate(directory):
         try:
             data = load_config(name, directory)
         except Exception as exc:
-            print(f"{name}: FAILED to load -> {type(exc).__name__}: {exc}")
-            overlay = local_path_for(name, directory)
-            if os.path.exists(overlay):
-                print(f"    the overlay {os.path.basename(overlay)} is the likely "
-                      f"cause; check its JSON syntax")
+            print(f"{name}: FAILED to load -> {type(exc).__name__}")
+            path, detail = _offending_file(name, directory)
+            if path is not None:
+                _show_json_error(path, detail)
+            else:
+                print(f"    {exc}")
             problems += 1
             continue
 
