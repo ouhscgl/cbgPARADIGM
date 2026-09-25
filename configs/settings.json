@@ -15,7 +15,13 @@
     "control_panel": {
         "window_name"       : "Paradigm Setup",
         "window_position"   : [50, 450],
-        "window_size"       : [400, 545],
+        "window_size"       : [400, 580],
         "always_on_top"     : false
+    },
+    "applications": {
+        "NIRStar"           : {"window": "NIRx NIRStar", "exe": "", "image": ""},
+        "Aurora"            : {"window": "Aurora fNIRS", "exe": "", "image": ""},
+        "EmotivPRO"         : {"window": "EmotivPRO",    "exe": "", "image": ""},
+        "g.Recorder"        : {"window": "g.Recorder",   "exe": "", "image": ""}
     }
 }

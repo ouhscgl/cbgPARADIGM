@@ -1,0 +1,25 @@
+{
+    "__comment": "Copy me to profiles.local.json (untracked) and keep ONLY what THIS machine changes. Three things are possible: override part of a shared profile, add a profile of your own, or hide one with null. Everything not mentioned here keeps following the shared profiles.json, so new protocols still arrive with a git pull. The control panel marks anything defined here as [local] in the dropdown.",
+
+    "NRA_number": {
+        "rest_period"       : 15000,
+        "rest_states"       : ["open", "closed"]
+    },
+
+    "SITE_pilot": {
+        "display_name"      : "Site pilot: Nback (letters)",
+        "module"            : "nback.py",
+        "stim_type"         : "letter_stimulus.csv",
+        "rest_period"       : 60000,
+        "instructions"      : 10000,
+        "stim_presentation" : 500,
+        "stim_cooldown"     : 1500,
+        "rest_states"       : ["open"],
+        "appendix"          : "_PILOT",
+        "keystroke_programs": [
+            {"window": "Aurora fNIRS", "key": "F8"}
+        ]
+    },
+
+    "TBI_letter": null
+}

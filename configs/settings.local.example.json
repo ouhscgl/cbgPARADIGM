@@ -10,5 +10,17 @@
         "emotiv_data"       : "C:\\Emotiv_data",
         "video_instructions": "C:\\Users\\biochemlab\\Desktop\\N-back instructions video.mov",
         "fleet_dir"         : ""
+    },
+
+    "applications": {
+        "NIRStar"           : {"window": "NIRx NIRStar",
+                               "exe":    "C:\\NIRx\\NIRStar15-3\\NIRStar.exe",
+                               "image":  "NIRStar.exe"},
+        "Aurora"            : {"window": "Aurora fNIRS",
+                               "exe":    "C:\\Program Files\\NIRx\\Aurora\\Aurora.exe",
+                               "image":  "Aurora.exe"},
+        "EmotivPRO"         : {"window": "EmotivPRO",
+                               "exe":    "C:\\Program Files\\EmotivPRO\\EmotivPRO.exe",
+                               "image":  "EmotivPRO.exe"}
     }
 }

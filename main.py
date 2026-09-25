@@ -1,12 +1,12 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-import argparse, subprocess, sys, os, json, tempfile, gc, time
+import argparse, subprocess, sys, os, json, tempfile, gc, threading, time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from auxfunc import crashlog
 from auxfunc.marker_relay import MarkerRelayServer
-from auxfunc.config import load_config, applied_overlays
-from auxfunc import fleet, version
+from auxfunc.config import load_config, load_overlay, applied_overlays
+from auxfunc import apps, fleet, updater, version
 from auxfunc.perf_stream import default_path as perf_file_for
 from auxfunc.paradigm_utils import write_skip_command
 
@@ -64,10 +64,19 @@ def load_configuration(filename):
         return None
 
 
-def build_experiments_dict(profiles):
+def build_experiments_dict(profiles, local_keys=()):
+    """Display name -> profile key, for the dropdown.
+
+    Profiles that this machine's profiles.local.json defines or overrides are
+    marked, so nobody has to wonder which definition a run used. It also keeps
+    a local profile from colliding with a shared one that happens to carry the
+    same display_name.
+    """
     experiments = {}
     for profile_key, profile_data in profiles.items():
         display_name = profile_data.get('display_name', profile_key)
+        if profile_key in local_keys:
+            display_name = f"{display_name}  [local]"
         experiments[display_name] = profile_key
     return experiments
 
@@ -177,10 +186,180 @@ class ExportResultsWindow:
         self.window.destroy()
 
 
+# Applications Window
+# ----------------------------------------------------------------------------
+class ApplicationsWindow:
+    """Start and stop the acquisition programs listed in settings.
+
+    Status is polled on a worker thread: finding a window is cheap, but the
+    tasklist fallback for a process whose window has gone is not, and the
+    control panel must not stutter every two seconds.
+    """
+
+    REFRESH_MS = 2000
+
+    def __init__(self, parent, panel):
+        self.panel    = panel
+        self.registry = apps.registry(panel.settings)
+        self.rows     = {}
+        self._job     = None
+        self._busy    = False
+
+        self.window = tk.Toplevel(parent)
+        self.window.title("Applications")
+        self.window.transient(parent)
+        self.window.resizable(False, False)
+        self.window.protocol("WM_DELETE_WINDOW", self.close)
+
+        frame = ttk.Frame(self.window, padding="10")
+        frame.pack(fill="both", expand=True)
+
+        if not self.registry:
+            ttk.Label(frame, justify="left", text=(
+                "No applications configured.\n\n"
+                "Add them to configs/settings.local.json:\n\n"
+                '  "applications": {\n'
+                '      "NIRStar": {\n'
+                '          "window": "NIRx NIRStar",\n'
+                '          "exe":    "C:\\\\NIRx\\\\NIRStar.exe",\n'
+                '          "image":  "NIRStar.exe"\n'
+                "      }\n"
+                "  }")).pack(anchor="w")
+            ttk.Button(frame, text="Close", command=self.close).pack(anchor="e",
+                                                                     pady=(10, 0))
+            return
+
+        for index, (name, spec) in enumerate(self.registry.items()):
+            tk.Label(frame, text=name, font=("TkDefaultFont", 9, "bold"),
+                     anchor="w").grid(row=index, column=0, sticky="w", pady=2)
+            state = tk.Label(frame, text="…", font=("TkDefaultFont", 9),
+                             foreground=COLOR_BAD, anchor="w", width=15)
+            state.grid(row=index, column=1, sticky="w", padx=(10, 6))
+            start = ttk.Button(frame, text="Launch", width=8,
+                               command=lambda n=name: self.launch(n))
+            start.grid(row=index, column=2, padx=2)
+            stop = ttk.Button(frame, text="Kill", width=6,
+                              command=lambda n=name: self.kill(n))
+            stop.grid(row=index, column=3, padx=2)
+            self.rows[name] = {'state': state, 'launch': start, 'kill': stop,
+                               'spec': spec}
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=len(self.registry), column=0, columnspan=4,
+                    sticky="ew", pady=(10, 0))
+        ttk.Button(footer, text="Launch all",
+                   command=self.launch_all).pack(side="left")
+        ttk.Button(footer, text="Close", command=self.close).pack(side="right")
+
+        self.message = tk.Label(frame, text="", font=("TkDefaultFont", 8),
+                                foreground="#555555", anchor="w",
+                                wraplength=360, justify="left")
+        self.message.grid(row=len(self.registry) + 1, column=0, columnspan=4,
+                          sticky="w", pady=(6, 0))
+        if not apps.kill_supported():
+            self._say("Stopping programs only works on Windows; Launch still does.")
+
+        self.refresh()
+        self.center()
+
+    # ---- plumbing ---------------------------------------------------------- #
+    def center(self, x_offset=30, y_offset=90):
+        self.window.update_idletasks()
+        parent = self.window.master
+        self.window.geometry(f"+{parent.winfo_x() + x_offset}"
+                             f"+{parent.winfo_y() + y_offset}")
+
+    def _say(self, text):
+        if getattr(self, 'message', None) is not None:
+            self.message.config(text=text)
+
+    def _set_busy(self, busy):
+        self._busy = busy
+        state = 'disabled' if busy else '!disabled'
+        for row in self.rows.values():
+            row['launch'].state([state])
+            row['kill'].state([state])
+
+    def refresh(self):
+        """Poll status off the UI thread, then paint the result on it."""
+        if not self.rows:
+            return
+
+        def work():
+            found = {name: apps.status(row['spec'])
+                     for name, row in self.rows.items()}
+            try:
+                self.window.after(0, lambda: self._paint(found))
+            except Exception:
+                pass                      # window closed while we were looking
+
+        threading.Thread(target=work, name='app-status', daemon=True).start()
+        self._job = self.window.after(self.REFRESH_MS, self.refresh)
+
+    def _paint(self, found):
+        colors = {apps.RUNNING: COLOR_OK, apps.NOT_RESPONDING: COLOR_DEAD,
+                  apps.NOT_RUNNING: COLOR_BAD}
+        for name, info in found.items():
+            row = self.rows.get(name)
+            if row is None:
+                continue
+            row['state'].config(text=info['state'],
+                                foreground=colors.get(info['state'], COLOR_BAD))
+            if not self._busy:
+                running = info['state'] != apps.NOT_RUNNING
+                row['launch'].state(['disabled' if running else '!disabled'])
+                row['kill'].state(['!disabled' if (running and apps.kill_supported())
+                                   else 'disabled'])
+
+    # ---- actions ------------------------------------------------------------ #
+    def launch(self, name):
+        ok, message = apps.launch(self.rows[name]['spec'])
+        self.panel.log.log(f"Applications: launch {name} -> {message}")
+        self._say(f"{name}: {message}")
+
+    def launch_all(self):
+        for name, row in self.rows.items():
+            if apps.status(row['spec'])['state'] == apps.NOT_RUNNING:
+                self.launch(name)
+        self._say("Launched everything that was not already running.")
+
+    def kill(self, name):
+        if not messagebox.askyesno(
+                "Stop program",
+                f"Force {name} to close?\n\n"
+                "Anything it is recording right now will be lost.",
+                parent=self.window):
+            return
+        self._set_busy(True)
+        self._say(f"Stopping {name}…")
+
+        def work():
+            ok, message = apps.kill(self.rows[name]['spec'])
+            def done():
+                self._set_busy(False)
+                self.panel.log.log(f"Applications: kill {name} -> {message}")
+                self._say(f"{name}: {message}")
+            try:
+                self.window.after(0, done)
+            except Exception:
+                pass
+
+        threading.Thread(target=work, name='app-kill', daemon=True).start()
+
+    def close(self):
+        if self._job is not None:
+            try:
+                self.window.after_cancel(self._job)
+            except Exception:
+                pass
+            self._job = None
+        self.window.destroy()
+
+
 # Control Panel
 # ----------------------------------------------------------------------------
 class ControlPanel:
-    def __init__(self, root, dry_run=False):
+    def __init__(self, root, dry_run=False, subject=None):
         # Load configs
         self.settings = load_configuration('settings.json')
         self.profiles = load_configuration('profiles.json')
@@ -226,6 +405,17 @@ class ControlPanel:
         for overlay in applied_overlays():
             self.log.log(f"Config overlay applied: {overlay}")
 
+        # Which protocols came from this machine rather than from the repo.
+        profile_overlay     = load_overlay('profiles.json')
+        self._local_profiles = {key for key, value in profile_overlay.items()
+                                if value is not None}
+        hidden = sorted(key for key, value in profile_overlay.items() if value is None)
+        if profile_overlay:
+            self.log.log(
+                f"Profiles: {len(self.profiles)} available; local overlay defines "
+                f"{', '.join(sorted(self._local_profiles)) or 'nothing'}"
+                + (f"; hides {', '.join(hidden)}" if hidden else ""))
+
         # Tell the shared folder which build this machine is on. Background
         # thread: a mapped drive that has gone away must not delay startup.
         if not self.dry_run:
@@ -240,7 +430,7 @@ class ControlPanel:
         self.root.geometry(f"{window_size[0]}x{window_size[1]}")
         self.root.geometry(f"+{window_pos[0]}+{window_pos[1]}")
 
-        self.experiments = build_experiments_dict(self.profiles)
+        self.experiments = build_experiments_dict(self.profiles, self._local_profiles)
 
         # Probe capabilities and decide cascade-winning mode
         self.capabilities = probe_capabilities()
@@ -281,7 +471,9 @@ class ControlPanel:
         subject_frame.pack(fill="x", pady=5)
         self.subject_id = ttk.Entry(subject_frame)
         self.subject_id.pack(side="left", fill="x", expand=True, padx=(0, 5))
-        if self.dry_run:
+        if subject:
+            self.subject_id.insert(0, subject)
+        elif self.dry_run:
             self.subject_id.insert(0, "DRYRUN")
         self.export_button = ttk.Button(
             subject_frame, text="Export", command=self.export_data, width=6
@@ -378,6 +570,17 @@ class ControlPanel:
         )
         self.start_button.pack(fill="x", pady=5)
 
+        tools_frame = ttk.Frame(button_frame)
+        tools_frame.pack(fill="x")
+        self.apps_button = ttk.Button(
+            tools_frame, text="Applications", command=self.open_applications
+        )
+        self.apps_button.pack(side="left", fill="x", expand=True, padx=(0, 3))
+        self.update_button = ttk.Button(
+            tools_frame, text="Check for updates", command=self.check_for_updates
+        )
+        self.update_button.pack(side="left", fill="x", expand=True, padx=(3, 0))
+
         self.on_paradigm_change()
 
         # ---- Progress --------------------------------------------------- #
@@ -468,6 +671,15 @@ class ControlPanel:
             self._start_relay()
         else:
             self._set_lsl_dot(COLOR_BAD)
+
+        # What the last update check found, if anything.
+        self._update_info = None
+
+        # Look for an update once, quietly, after the window is up. Never pulls:
+        # it only relabels the button, so a machine three versions behind says
+        # so without anyone having to think to ask.
+        if not self.dry_run:
+            self.root.after(1500, lambda: self._start_update_check(interactive=False))
 
         # Periodic poll
         self.check_progress()
@@ -760,6 +972,170 @@ class ControlPanel:
             messagebox.showerror("Error", f"Could not start tutorial: {str(e)}")
 
     # ---- Fast-forward -------------------------------------------------- #
+    def open_applications(self):
+        """Start / stop the acquisition programs listed in settings."""
+        try:
+            ApplicationsWindow(self.root, self)
+        except Exception as e:
+            self.log.exception("could not open the applications window", fatal=False)
+            messagebox.showerror("Applications", str(e))
+
+    # ---- updates ------------------------------------------------------- #
+    def _start_update_check(self, interactive):
+        """Fetch and compare on a worker thread; the UI never waits on git."""
+        if interactive:
+            self.update_button.state(['disabled'])
+            self.update_button.config(text="Checking…")
+
+        timeout = updater.MANUAL_TIMEOUT if interactive else updater.AUTO_TIMEOUT
+
+        def work():
+            try:
+                info = updater.check(timeout=timeout)
+            except Exception as exc:       # belt and braces: check() is no-raise
+                info = {'ok': False, 'error': f"{type(exc).__name__}: {exc}",
+                        'behind': 0, 'ahead': 0, 'incoming': [], 'target': None,
+                        'upstream': None, 'branch': None, 'dirty': False}
+            try:
+                self.root.after(0, lambda: self._update_checked(info, interactive))
+            except Exception:
+                pass                       # panel closed mid-check
+
+        threading.Thread(target=work, name='update-check', daemon=True).start()
+
+    def _update_checked(self, info, interactive):
+        try:
+            self._apply_update_check(info, interactive)
+        except tk.TclError:
+            pass                           # panel is closing; nothing to update
+        except Exception:
+            self.log.exception("update check callback failed", fatal=False)
+
+    def _apply_update_check(self, info, interactive):
+        self.update_button.state(['!disabled'])
+        self._update_info = info
+
+        if not info['ok']:
+            self.log.warn(f"Update check failed: {info['error']}")
+            self.update_button.config(text="Check for updates")
+            if interactive:
+                messagebox.showwarning("Update check", info['error'])
+            return
+
+        if info['behind']:
+            target = info['target'] or f"{info['behind']} commits"
+            self.log.log(f"Update available: {target} "
+                         f"({info['behind']} commit(s) behind {info['upstream']})")
+            self.update_button.config(text=f"Update available: {target}")
+            if interactive:
+                self._offer_update()
+        else:
+            self.log.log(f"Up to date with {info['upstream']}"
+                         + (f"; {info['ahead']} local commit(s) not pushed"
+                            if info['ahead'] else ""))
+            self.update_button.config(text="Check for updates")
+            if interactive:
+                messagebox.showinfo("Up to date",
+                                    f"This machine matches {info['upstream']}.")
+
+    def check_for_updates(self):
+        info = self._update_info
+        if info and info.get('ok') and info.get('behind'):
+            self._offer_update()           # already know; go straight to the offer
+        else:
+            self._start_update_check(interactive=True)
+
+    def _offer_update(self):
+        info = self._update_info or {}
+        if self.process and self.process.poll() is None:
+            messagebox.showwarning(
+                "Paradigm running",
+                "A paradigm is still running.\n\nUpdating now would leave this "
+                "control panel driving newer paradigm code. Finish the session "
+                "first.")
+            return
+
+        listing = "\n".join(f"  {sha}  {subject}"
+                             for sha, subject in info.get('incoming', [])[:10])
+        if len(info.get('incoming', [])) > 10:
+            listing += f"\n  … and {len(info['incoming']) - 10} more"
+
+        warning = ""
+        if info.get('dirty'):
+            warning = ("\n\nNOTE: this copy has local edits. The update will "
+                       "refuse rather than overwrite them.")
+
+        if not messagebox.askyesno(
+                "Update available",
+                f"{info.get('behind', '?')} commit(s) behind "
+                f"{info.get('upstream', 'the server')}"
+                + (f", up to {info['target']}" if info.get('target') else "")
+                + f":\n\n{listing}\n\n"
+                  "The control panel will close and reopen once it is done."
+                + warning):
+            return
+
+        self.update_button.state(['disabled'])
+        self.update_button.config(text="Updating…")
+
+        def work():
+            ok, message = updater.apply_update()
+            try:
+                self.root.after(0, lambda: self._update_applied(ok, message))
+            except Exception:
+                pass
+
+        threading.Thread(target=work, name='update-apply', daemon=True).start()
+
+    def _update_applied(self, ok, message):
+        self.update_button.state(['!disabled'])
+        if not ok:
+            self.update_button.config(text="Check for updates")
+            self.log.warn(f"Update refused: {message}")
+            messagebox.showerror("Update not applied", message)
+            return
+
+        self.log.log(f"Updated: {message}")
+        self._update_info = None
+        if messagebox.askyesno("Update installed",
+                               f"{message}\n\nRestart the control panel now?"):
+            self.restart()
+        else:
+            self.update_button.config(text="Restart to finish updating")
+
+    def restart(self):
+        """Relaunch this panel as a fresh process and let this one go.
+
+        A running python process cannot adopt new source, so the only honest
+        way to finish an update is to hand over to a new one. Detached, so the
+        replacement does not die with us.
+        """
+        target = [sys.executable, os.path.join(self.script_dir, 'main.py')]
+        if self.dry_run:
+            target.append('--dry-run')
+        subject = self.subject_id.get().strip()
+        if subject:
+            target += ['--subject', subject]
+
+        options = {'cwd': self.script_dir, 'close_fds': True}
+        if os.name == 'nt':
+            options['creationflags'] = (subprocess.DETACHED_PROCESS
+                                        | subprocess.CREATE_NEW_PROCESS_GROUP)
+        else:
+            options['start_new_session'] = True
+
+        try:
+            subprocess.Popen(target, **options)
+        except Exception as e:
+            self.log.error(f"restart failed -> {e}")
+            messagebox.showerror("Restart failed",
+                                 f"{e}\n\nClose and reopen the panel by hand.")
+            return
+
+        self.log.log("Restarting the control panel after an update")
+        self.shutdown()
+        self.root.destroy()
+
     def open_perf_monitor(self):
         """Launch the live performance view as its own process.
 
@@ -1111,6 +1487,9 @@ class ControlPanel:
 # ----------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="cbgPARADIGM control panel")
+    parser.add_argument('--subject', default=None,
+                        help="pre-fill the Subject ID field (used when the panel "
+                             "restarts itself after an update)")
     parser.add_argument('--dry-run', '--dry_run', dest='dry_run', action='store_true',
                         help="Testing mode: logs and the trial feed go to a "
                              "throwaway folder in the OS temp directory and no "
@@ -1119,7 +1498,7 @@ def main():
     args = parser.parse_args()
 
     root = tk.Tk()
-    app = ControlPanel(root, dry_run=args.dry_run)
+    app = ControlPanel(root, dry_run=args.dry_run, subject=args.subject)
 
     def on_closing():
         app.shutdown()

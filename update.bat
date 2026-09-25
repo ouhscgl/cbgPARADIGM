@@ -9,10 +9,16 @@ if errorlevel 1 (
     echo *** This copy has edits that are not in the repository: ***
     git status --short --untracked-files=no
     echo.
-    echo Nothing has been changed. Save anything you need, then either
-    echo   git stash             (keep the edits for later^)
-    echo   git checkout -- .     (throw the edits away^)
-    echo and run this again.
+    echo Nothing has been changed.
+    echo.
+    echo If those edits are in configs\, they belong in an untracked overlay
+    echo instead - move them out once and updates will never clash again:
+    echo   python auxfunc\config.py --extract settings.json --write
+    echo   python auxfunc\config.py --extract profiles.json --write
+    echo   git checkout -- configs
+    echo.
+    echo Otherwise: git stash (keep them^) or git checkout -- . (discard them^),
+    echo then run this again.
     pause
     exit /b 1
 )

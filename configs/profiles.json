@@ -17,11 +17,11 @@
         "display_name"      : "NRA: Nback (numbers)",
         "module"            : "nback.py",
         "stim_type"         : "number_stimulus.csv",
-        "rest_period"       : 60000,
+        "rest_period"       : 15000,
         "instructions"      : 10000,
         "stim_presentation" : 500,
         "stim_cooldown"     : 1500,
-        "rest_states"       : ["open"],
+        "rest_states"       : ["open","closed"],
         "appendix"          : "_EEG_COG",
         "keystroke_programs": [
             {"window": "EmotivPRO",    "key": "8" }
