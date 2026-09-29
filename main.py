@@ -181,9 +181,15 @@ class ExportResultsWindow:
             status = info.get('status', 'unknown')
             display_name = display_names.get(file_type, file_type)
             self.create_result_row(parent, display_name, status,
-                                   info.get('message', ''), info.get('source', ''))
+                                   info.get('message', ''), info.get('source', ''),
+                                   info.get('cloud', ''), info.get('cloud_detail', ''))
 
-    def create_result_row(self, parent, display_name, status, message='', source=''):
+    CLOUD_COLORS = {'synced': "#2ecc71", 'online-only': "#2ecc71",
+                    'pending': "#f39c12", 'local only': "#e74c3c",
+                    'unknown': "#95a5a6"}
+
+    def create_result_row(self, parent, display_name, status, message='', source='',
+                          cloud='', cloud_detail=''):
         """One line per file, plus what actually happened to it.
 
         The icon alone could not tell you which session was copied or why
@@ -203,7 +209,14 @@ class ExportResultsWindow:
                  font=("Verdana", 8, "bold"),
                  foreground="black", anchor="w").pack(side="left", fill="x", expand=True)
 
+        if cloud:
+            tk.Label(row_frame, text=cloud, font=("TkDefaultFont", 8, "bold"),
+                     foreground=self.CLOUD_COLORS.get(cloud, "#95a5a6"),
+                     anchor="e").pack(side="right", padx=(6, 0))
+
         detail = message or status
+        if cloud_detail:
+            detail += f"\n     OneDrive: {cloud_detail}"
         if source:
             detail += f"\n     from {source}"
         tk.Label(parent, text=f"      {detail}", font=("TkDefaultFont", 8),

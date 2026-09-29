@@ -10,18 +10,20 @@ from datetime import datetime
 
 try:
     from auxfunc.config import load_config
+    from auxfunc import cloudsync
 except ImportError:          # run directly from inside auxfunc/
     from config import load_config
+    import cloudsync
 
 class ExportResults:
     def __init__(self):
         self.results = {
             'subject_id': '',
             'files': {
-                'fnirs_nback': {'status': 'not_found', 'message': '', 'path': '', 'source': ''},
-                'fnirs_fingertapping': {'status': 'not_found', 'message': '', 'path': '', 'source': ''},
-                'eeg_data': {'status': 'not_found', 'message': '', 'path': '', 'source': ''},
-                'eeg_markers': {'status': 'not_found', 'message': '', 'path': '', 'source': ''}
+                'fnirs_nback': {'status': 'not_found', 'message': '', 'path': '', 'source': '', 'cloud': '', 'cloud_detail': ''},
+                'fnirs_fingertapping': {'status': 'not_found', 'message': '', 'path': '', 'source': '', 'cloud': '', 'cloud_detail': ''},
+                'eeg_data': {'status': 'not_found', 'message': '', 'path': '', 'source': '', 'cloud': '', 'cloud_detail': ''},
+                'eeg_markers': {'status': 'not_found', 'message': '', 'path': '', 'source': '', 'cloud': '', 'cloud_detail': ''}
             }
         }
     
@@ -30,11 +32,22 @@ class ExportResults:
     
     def set_file_result(self, file_type, status, message='', path='', source=''):
         if file_type in self.results['files']:
+            # Whether the copy reached OneDrive is a separate question from
+            # whether the copy worked, so it is a separate field. Uploads are
+            # asynchronous: right after a copy this is normally 'pending'.
+            cloud = {'state': '', 'detail': ''}
+            if path and os.path.exists(path):
+                try:
+                    cloud = cloudsync.describe_tree(path)
+                except Exception as exc:
+                    cloud = {'state': 'unknown', 'detail': str(exc)}
             self.results['files'][file_type] = {
                 'status': status,
                 'message': message,
                 'path': path,
                 'source': source,
+                'cloud': cloud.get('state', ''),
+                'cloud_detail': cloud.get('detail', ''),
             }
     
     def write_log(self, log_path):
@@ -52,7 +65,9 @@ class ExportResults:
                     f.write(f"  Status: {info['status']}\n")
                     f.write(f"  Message: {info['message']}\n")
                     f.write(f"  Source: {info.get('source', '')}\n")
-                    f.write(f"  Path: {info['path']}\n\n")
+                    f.write(f"  Path: {info['path']}\n")
+                    f.write(f"  OneDrive: {info.get('cloud', '')} "
+                            f"({info.get('cloud_detail', '')})\n\n")
         except Exception as e:
             print(f"Warning: Could not write log file: {e}")
     
@@ -79,7 +94,8 @@ class ExportResults:
         for file_type, info in self.results['files'].items():
             icon = status_icons.get(info['status'], '?')
             name = display_names.get(file_type, file_type)
-            print(f"  {icon} {name}: {info['message'] or info['status']}")
+            cloud = f"  [OneDrive: {info['cloud']}]" if info.get('cloud') else ''
+            print(f"  {icon} {name}: {info['message'] or info['status']}{cloud}")
         
         print("=" * 50 + "\n")
 
