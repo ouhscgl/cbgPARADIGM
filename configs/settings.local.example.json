@@ -13,6 +13,16 @@
         "fleet_dir"         : ""
     },
 
+    "__triggers": {
+        "_focus_method":  "quiet = raise the target window without injecting input (default). alt = the legacy pyautogui.press('alt') hack, which is what makes Windows beep on a cue. none = never try to change focus.",
+        "_alt_fallback":  "true (default) = if quiet focus fails, try the legacy ALT hack rather than give up on the trigger. Set false to keep the machine silent, accepting that a trigger whose window cannot be focused is not delivered.",
+        "_require_focus": "false (default) = send the simulated keystroke even when the target window could not be focused, as the code always did -- it may land in another window. true = skip it instead, and log the marker as not recorded.",
+        "focus_method"      : "quiet",
+        "alt_fallback"      : true,
+        "verify_focus"      : true,
+        "require_focus"     : false
+    },
+
     "__applications": {
         "NIRStar"           : {"window": "NIRx NIRStar",
                                "exe":    "C:\\NIRx\\NIRStar15-3\\NIRStar.exe",

@@ -18,6 +18,12 @@
         "window_size"       : [400, 580],
         "always_on_top"     : false
     },
+    "triggers": {
+        "focus_method"      : "quiet",
+        "alt_fallback"      : true,
+        "verify_focus"      : true,
+        "require_focus"     : false
+    },
     "applications": {
         "NIRStar"           : {"window": "NIRx NIRStar","exe":"C:\\NIRx\\NIRStar15-3\\NIRStar.exe","image":"NIRStar.exe"},
         "Aurora"            : {"window": "Aurora fNIRS","exe":"C:\\Program Files\\NIRx\\Aurora\\Aurora.exe","image":"Aurora.exe"},

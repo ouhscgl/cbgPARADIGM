@@ -138,7 +138,8 @@ def main():
 
     # Initialize unified trigger dispatcher (cascade: TTL -> LSL -> keystrokes)
     trigger = TriggerManager(use_lsl=args.use_lsl, programs=keystroke_programs,
-                             marker_port=args.marker_port, logger=LOG)
+                             marker_port=args.marker_port, logger=LOG,
+                             options=settings.get('triggers', {}))
 
     control = RunControl(command_file=args.command_file, logger=LOG)
     crashed = False

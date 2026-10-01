@@ -97,29 +97,251 @@ def clear_font_cache():
 
 
 # ---- Win32 helpers (no-op on other platforms) ------------------------------ #
-def _find_window_partial(partial_name):
-    if not _WIN32_AVAILABLE:
-        return None
-    results = []
-    def cb(hwnd, results):
-        if partial_name in win32gui.GetWindowText(hwnd):
-            results.append(hwnd)
-        return True
-    win32gui.EnumWindows(cb, results)
-    return results[0] if results else None
+# Focus / keystroke behaviour, overridable from settings.json -> "triggers".
+_TRIGGER_OPTIONS = {
+    'focus_method':  'quiet',   # 'quiet' (injects nothing) | 'alt' (legacy) | 'none'
+    'alt_fallback':  True,      # use the legacy ALT hack when quiet focus fails
+    'verify_focus':  True,      # confirm with GetForegroundWindow before sending
+    'require_focus': False,     # skip the keystroke entirely if focus never landed
+}
+
+_focus_log_state = {'multi_warned': set(), 'last_warn': {}}
+
+_user32 = None
+if _WIN32_AVAILABLE and os.name == 'nt':
+    try:
+        import ctypes
+        _user32 = ctypes.windll.user32
+    except Exception:
+        _user32 = None
 
 
-def _ensure_focus(hwnd, max_attempts=20, delay_ms=50):
-    if not _WIN32_AVAILABLE or hwnd is None:
+def configure_triggers(options):
+    """Apply settings.json -> "triggers" to focus and keystroke behaviour.
+
+    Unknown keys are ignored, so a settings file from an older checkout can
+    never break a run.
+    """
+    for key, value in (options or {}).items():
+        if key in _TRIGGER_OPTIONS:
+            _TRIGGER_OPTIONS[key] = value
+    return dict(_TRIGGER_OPTIONS)
+
+
+def trigger_options():
+    return dict(_TRIGGER_OPTIONS)
+
+
+def _warn_throttled(log, key, message, interval=10.0):
+    """One warning per `key` per `interval` seconds.
+
+    Focus problems repeat on every trigger. The point is to make them visible,
+    not to write the same line 40 times a run.
+    """
+    now = time.monotonic()
+    previous = _focus_log_state['last_warn'].get(key, -1e9)
+    if now - previous < interval:
         return False
-    pyautogui.press("alt")  # Win32 focus-stealing workaround
-    for _ in range(max_attempts):
+    _focus_log_state['last_warn'][key] = now
+    (log or crashlog.get()).warn(message)
+    return True
+
+
+def _foreground_hwnd():
+    try:
+        return win32gui.GetForegroundWindow()
+    except Exception:
+        return None
+
+
+def _window_title(hwnd):
+    try:
+        return win32gui.GetWindowText(hwnd) if hwnd else ''
+    except Exception:
+        return ''
+
+
+def window_candidates(partial_name):
+    """Top-level windows whose title contains `partial_name`, best first.
+
+    EnumWindows hands back a great many windows nobody ever sees: hidden helper
+    windows, splash screens, the off-screen hosts Electron-based apps keep
+    around. Any of those can carry the program's name in its title, and
+    SetForegroundWindow on an invisible window always fails -- after which a
+    globally injected keystroke lands on whatever window *is* focused. So rank
+    visible, owner-less, real-sized windows above the rest instead of taking
+    whichever one EnumWindows happened to reach first.
+    """
+    if not _WIN32_AVAILABLE or not partial_name:
+        return []
+    found = []
+
+    def visit(hwnd, sink):
+        try:
+            title = win32gui.GetWindowText(hwnd)
+        except Exception:
+            return True
+        if title and partial_name in title:
+            sink.append((hwnd, title))
+        return True
+
+    try:
+        win32gui.EnumWindows(visit, found)
+    except Exception:
+        return []
+
+    def rank(entry):
+        hwnd = entry[0]
+        points = 0
+        try:
+            if win32gui.IsWindowVisible(hwnd):
+                points += 4
+        except Exception:
+            pass
+        try:
+            if not win32gui.GetWindow(hwnd, win32con.GW_OWNER):
+                points += 2
+        except Exception:
+            pass
+        try:
+            if win32gui.IsIconic(hwnd):
+                points += 1                 # minimised but real; restorable
+            else:
+                left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+                if (right - left) > 200 and (bottom - top) > 100:
+                    points += 1
+        except Exception:
+            pass
+        return -points                      # ascending sort -> best first
+
+    return sorted(found, key=rank)
+
+
+def _find_window_partial(partial_name, log=None):
+    candidates = window_candidates(partial_name)
+    if not candidates:
+        return None
+    if len(candidates) > 1 and partial_name not in _focus_log_state['multi_warned']:
+        _focus_log_state['multi_warned'].add(partial_name)
+        (log or crashlog.get()).warn(
+            f"_find_window_partial: '{partial_name}' matches {len(candidates)} "
+            f"windows {[t for _, t in candidates][:4]}; using hwnd "
+            f"{candidates[0][0]} ('{candidates[0][1]}'). Narrow the profile's "
+            f"\"window\" string if that is the wrong one.")
+    return candidates[0][0]
+
+
+def _focus_quietly(hwnd):
+    """Raise `hwnd` to the foreground without injecting any input.
+
+    AttachThreadInput ties our input queue to the current foreground thread,
+    which is one of the documented conditions under which Windows permits a
+    foreground change. Unlike the ALT hack it sends nothing to any window, so
+    it cannot activate a menu bar -- and so cannot make Windows beep.
+    """
+    if not (_WIN32_AVAILABLE and hwnd):
+        return False
+    ours = target = 0
+    attached = False
+    try:
+        if _user32 is not None:
+            try:
+                target = _user32.GetWindowThreadProcessId(hwnd, None)
+                foreground = _foreground_hwnd()
+                ours = _user32.GetWindowThreadProcessId(foreground, None) if foreground else 0
+                if ours and target and ours != target:
+                    attached = bool(_user32.AttachThreadInput(ours, target, True))
+                _user32.AllowSetForegroundWindow(-1)        # ASFW_ANY
+            except Exception:
+                pass
+        try:
+            if win32gui.IsIconic(hwnd):
+                win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        except Exception:
+            pass
+        for call in ('BringWindowToTop', 'SetForegroundWindow', 'SetActiveWindow'):
+            try:
+                getattr(win32gui, call)(hwnd)
+            except Exception:
+                pass                        # SetActiveWindow only works in-thread
+    finally:
+        if attached:
+            try:
+                _user32.AttachThreadInput(ours, target, False)
+            except Exception:
+                pass
+    return _foreground_hwnd() == hwnd
+
+
+def _ensure_focus(hwnd, max_attempts=20, delay_ms=50, log=None):
+    """Bring `hwnd` to the foreground, and report whether it actually happened.
+
+    Rewritten 2026-09, after a Windows "ding" was heard on every LEFT/RIGHT cue
+    in fingertapping. The old body began with
+
+        pyautogui.press("alt")      # Win32 focus-stealing workaround
+
+    which injects a real ALT keystroke into whichever window currently holds
+    focus. On the acquisition programs -- Aurora and g.Recorder are ordinary
+    windowed apps with menu bars -- ALT activates the menu bar. If the
+    SetForegroundWindow that follows then fails, and Windows refuses it
+    routinely (always, for a hidden window), the trigger key is still injected
+    globally and arrives at that menu-mode window as a menu mnemonic. There is
+    no '8' or F8 mnemonic, so DefWindowProc answers MNC_IGNORE and Windows
+    plays the default beep. The beep is the audible half of a mis-delivered
+    trigger, which is the half that matters.
+
+    Nothing logged any of it: this function swallowed every SetForegroundWindow
+    failure, and _send_keystroke_one ignored the return value and reported
+    success regardless -- so the run log said `fired: ["keystroke"]` either way.
+
+    Now: a no-op when we are already foreground, then a focus method that
+    injects nothing, verified against GetForegroundWindow. The ALT hack remains
+    only as an explicit last resort, and says so in the log when it runs.
+    """
+    log = log or crashlog.get()
+    if not _WIN32_AVAILABLE or not hwnd:
+        return False
+
+    if _foreground_hwnd() == hwnd:
+        return True                         # already ours: inject nothing
+
+    method = str(_TRIGGER_OPTIONS.get('focus_method', 'quiet')).lower()
+    if method == 'none':
+        return False
+
+    attempts = max(1, int(max_attempts))
+    if method != 'alt':
+        for _ in range(min(attempts, 3)):
+            if _focus_quietly(hwnd):
+                return True
+            time.sleep(delay_ms / 1000)
+        if not _TRIGGER_OPTIONS.get('alt_fallback', True):
+            return False
+        _warn_throttled(
+            log, f'alt-fallback:{hwnd}',
+            f"_ensure_focus: quiet focus failed for hwnd {hwnd} "
+            f"('{_window_title(hwnd)}'); falling back to the legacy ALT hack. "
+            f"That injected ALT is what makes Windows beep -- set "
+            f"triggers.alt_fallback to false in settings to silence it, at the "
+            f"cost of this trigger not being delivered.")
+
+    # Legacy path: injects ALT into whatever window currently has focus.
+    try:
+        pyautogui.press("alt")  # Win32 focus-stealing workaround
+    except Exception as exc:
+        log.warn(f"_ensure_focus: ALT injection failed ({exc})")
+    for _ in range(attempts):
         try:
             win32gui.SetForegroundWindow(hwnd)
-            return True
+            if not _TRIGGER_OPTIONS.get('verify_focus', True):
+                return True
         except Exception:
-            time.sleep(delay_ms / 1000)
-    return False
+            pass
+        if _foreground_hwnd() == hwnd:
+            return True
+        time.sleep(delay_ms / 1000)
+    return _foreground_hwnd() == hwnd
 
 # ---- The manager ---------------------------------------------------------- #
 class TriggerManager:
@@ -151,13 +373,18 @@ class TriggerManager:
     """
     def __init__(self, use_lsl=True, programs=None, pulse_ms=50,
                  lsl_source_id='paradigm_triggers', marker_port=None,
-                 logger=None):
+                 logger=None, options=None):
         self.programs   = programs or []
         self._ttl_dev   = None
         self._lsl_out   = None
         self._relay     = None
         self._log       = logger or crashlog.get()
         self.sent_count = 0
+        # How hard to try for window focus, and what to do when it fails.
+        # settings.json -> "triggers"; see configure_triggers().
+        self.options        = configure_triggers(options)
+        self.focus_failures = 0
+        self._focus_report  = []
 
         self._init_ttl(pulse_ms)
         if use_lsl:
@@ -175,6 +402,19 @@ class TriggerManager:
                       f"lsl={self.lsl_available}, "
                       f"relay={self._relay is not None and self._relay.ok}, "
                       f"targets={_targets})")
+        self._log.log(f"TriggerManager: focus options {self.options}")
+        for prog in self.programs:
+            if prog.get('transport', 'keystroke').lower() != 'keystroke':
+                continue
+            matches = window_candidates(prog.get('window', ''))
+            if not matches:
+                self._log.warn(f"TriggerManager: no window matches "
+                               f"'{prog.get('window')}' right now; its {prog.get('key')} "
+                               f"triggers will go nowhere until it is open")
+            else:
+                self._log.log(f"TriggerManager: '{prog.get('window')}' -> hwnd "
+                              f"{matches[0][0]} ('{matches[0][1]}')"
+                              + (f" [{len(matches)} candidates]" if len(matches) > 1 else ""))
 
     # ---- availability --------------------------------------------------- #
     @property
@@ -251,6 +491,7 @@ class TriggerManager:
         # is stamped with the same instant rather than with its own latency.
         stamp = lsl_clock()
         fired = set()
+        self._focus_report = []
         for prog in self.programs:
             transport = prog.get('transport', 'keystroke').lower()
             mval      = int(prog.get('value', value))
@@ -269,13 +510,30 @@ class TriggerManager:
                     fired.add('keystroke')
 
         if return_focus_to:
-            hwnd = _find_window_partial(return_focus_to)
-            if hwnd is not None:
-                _ensure_focus(hwnd)
+            # Losing this one is quiet but expensive: if focus does not come
+            # back to the stimulus window, the participant's button presses go
+            # to whichever acquisition program kept it.
+            hwnd = _find_window_partial(return_focus_to, log=self._log)
+            if hwnd is None:
+                _warn_throttled(
+                    self._log, f'return-missing:{return_focus_to}',
+                    f"TriggerManager: no window matching '{return_focus_to}' to "
+                    f"hand focus back to")
+            elif not _ensure_focus(hwnd, log=self._log):
+                self.focus_failures += 1
+                self._focus_report.append([return_focus_to, 'return-failed'])
+                _warn_throttled(
+                    self._log, f'no-focus-return:{return_focus_to}',
+                    f"TriggerManager: could not hand focus back to "
+                    f"'{return_focus_to}'; '{_window_title(_foreground_hwnd())}' "
+                    f"still has it, so participant keypresses will land there "
+                    f"instead of in the paradigm.")
 
         self.sent_count += 1
         self._log.event('trigger', value=value, label=label, t=stamp,
-                        fired=sorted(fired) or ['none'], n=self.sent_count)
+                        fired=sorted(fired) or ['none'], n=self.sent_count,
+                        focus=self._focus_report or None,
+                        focus_failures=self.focus_failures)
         return fired or {'none'}
 
     # ---- per-transport primitives --------------------------------------- #
@@ -311,12 +569,38 @@ class TriggerManager:
         if vk is None:
             self._log.warn(f"TriggerManager: unknown key '{key}' for {window}")
             return False
-        hwnd = _find_window_partial(window)
+        hwnd = _find_window_partial(window, log=self._log)
         if hwnd is None:
             self._log.warn(f"TriggerManager: window '{window}' not found")
+            self._focus_report.append([window, 'window-missing'])
             return False
+
+        # keybd_event injects globally -- the key goes to whatever window has
+        # focus, not to `hwnd`. Until now nobody checked that those were the
+        # same window, so a refused foreground change delivered the trigger
+        # somewhere else and still reported success.
+        focused = _ensure_focus(hwnd, log=self._log)
+        if focused:
+            self._focus_report.append([window, 'ok'])
+        else:
+            self.focus_failures += 1
+            strict = bool(_TRIGGER_OPTIONS.get('require_focus'))
+            foreground = _foreground_hwnd()
+            _warn_throttled(
+                self._log, f'no-focus:{window}',
+                f"TriggerManager: could not bring '{window}' (hwnd {hwnd}) to the "
+                f"foreground; '{_window_title(foreground)}' has it. "
+                + ("Skipping this keystroke (triggers.require_focus is on) -- the "
+                   "marker is NOT being recorded."
+                   if strict else
+                   f"Sending {key} anyway, so it will be delivered to that window "
+                   f"instead of to {window}."))
+            self._focus_report.append([window, 'no-focus-skipped' if strict
+                                       else 'no-focus-sent-anyway'])
+            if strict:
+                return False
+
         try:
-            _ensure_focus(hwnd)
             keybd_event(vk, 0, 0, 0)
             time.sleep(0.01)
             keybd_event(vk, 0, win32con.KEYEVENTF_KEYUP, 0)
@@ -585,19 +869,22 @@ def ensure_window_focus(window_handle, max_attempts=3, delay_ms=20,
         return False
     _focus_state['last_attempt'] = now
 
-    try:
-        pyautogui.press("alt")  # Win32 focus-stealing workaround
-    except Exception:
-        pass
-
+    # No ALT injection here either. This runs once per frame during the n-back
+    # stimulus loop, and an injected ALT reaches whatever window is focused --
+    # which, when it is one of the acquisition programs, opens its menu bar and
+    # leaves the next trigger key to be eaten as a menu mnemonic (that is the
+    # Windows beep heard on the fingertapping cues). See _ensure_focus.
     last_error = None
     for attempt in range(max_attempts):
+        if _focus_quietly(window_handle):
+            return True  # Success
         try:
             win32gui.SetForegroundWindow(window_handle)
-            return True  # Success
+            if _foreground_hwnd() == window_handle:
+                return True
         except Exception as e:
             last_error = e
-            pygame.time.wait(delay_ms)
+        pygame.time.wait(delay_ms)
 
     # Rate-limited: at most one warning every 5 s, with a count of what we ate.
     if (now - _focus_state['last_warn']) > 5000:
